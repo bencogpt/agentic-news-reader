@@ -340,8 +340,9 @@ function PhaseItem({ phase }: { phase: Phase }) {
     );
   }
 
-  // For search phases, show articles list
-  if (phase.type === 'search' && phase.articles && phase.articles.length > 0) {
+  // For search phases, show articles list (or empty state with API link)
+  if (phase.type === 'search') {
+    const hasArticles = phase.articles && phase.articles.length > 0;
     return (
       <div className="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-800/50">
         <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-100 dark:border-gray-700">
@@ -367,23 +368,31 @@ function PhaseItem({ phase }: { phase: Phase }) {
               API
             </a>
           )}
-          <span className="text-xs text-gray-400">{phase.articles.length} found</span>
+          <span className={`text-xs ${hasArticles ? 'text-gray-400' : 'text-red-400'}`}>
+            {phase.articles?.length || 0} found
+          </span>
         </div>
-        <div className="px-3 py-2 space-y-0.5 max-h-32 overflow-y-auto bg-gray-50 dark:bg-gray-900/30">
-          {phase.articles.map((article, idx) => (
-            <a
-              key={idx}
-              href={article.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 text-xs hover:bg-white dark:hover:bg-gray-800 rounded px-1.5 py-1 -mx-1.5 group"
-            >
-              <span className="text-gray-300 dark:text-gray-600 w-4 text-right">{idx + 1}</span>
-              <span className="text-gray-600 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-white truncate flex-1">{article.title}</span>
-              <span className="text-gray-300 dark:text-gray-600 flex-shrink-0 text-[10px]">{article.source}</span>
-            </a>
-          ))}
-        </div>
+        {hasArticles ? (
+          <div className="px-3 py-2 space-y-0.5 max-h-32 overflow-y-auto bg-gray-50 dark:bg-gray-900/30">
+            {phase.articles!.map((article, idx) => (
+              <a
+                key={idx}
+                href={article.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 text-xs hover:bg-white dark:hover:bg-gray-800 rounded px-1.5 py-1 -mx-1.5 group"
+              >
+                <span className="text-gray-300 dark:text-gray-600 w-4 text-right">{idx + 1}</span>
+                <span className="text-gray-600 dark:text-gray-400 group-hover:text-gray-900 dark:group-hover:text-white truncate flex-1">{article.title}</span>
+                <span className="text-gray-300 dark:text-gray-600 flex-shrink-0 text-[10px]">{article.source}</span>
+              </a>
+            ))}
+          </div>
+        ) : phase.status === 'done' && (
+          <div className="px-3 py-2 text-xs text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-900/30">
+            No articles found. Click API link to debug the request.
+          </div>
+        )}
       </div>
     );
   }

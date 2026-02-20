@@ -69,10 +69,10 @@ export async function searchGNews(params: SearchParams): Promise<GNewsResult> {
   // Add API key last
   url.searchParams.set('apikey', apiKey);
 
-  // Create a display URL without the API key (after all params are set)
+  // Create a display URL for debugging (POC: keeping API key visible for troubleshooting)
   const displayUrl = new URL(url.toString());
 
-  console.log(`[GNews] Request URL: ${displayUrl.toString()}`);
+  console.log(`[GNews] Request URL (with key for POC debugging): ${displayUrl.toString()}`);
 
   let lastError: Error | null = null;
 
