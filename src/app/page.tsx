@@ -41,51 +41,153 @@ export default function Home() {
         </div>
       </div>
 
-      {/* How it Works */}
+      {/* Multi-Agent Architecture */}
       <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
-        <h2 className="text-2xl sm:text-3xl font-bold text-center text-gray-900 dark:text-white mb-12">
-          How It Works
+        <h2 className="text-2xl sm:text-3xl font-bold text-center text-gray-900 dark:text-white mb-4">
+          Multi-Agent Architecture
         </h2>
+        <p className="text-center text-gray-600 dark:text-gray-400 mb-12 max-w-2xl mx-auto">
+          Three specialized AI agents work together, each with a distinct role in the research process.
+        </p>
 
         <div className="grid md:grid-cols-3 gap-8">
-          {/* Step 1 */}
-          <div className="text-center">
-            <div className="w-16 h-16 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-purple-600 dark:text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          {/* UFA Agent */}
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+            <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center mb-4">
+              <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">1. Search</h3>
-            <p className="text-gray-600 dark:text-gray-400">
-              The Analyst agent creates targeted search queries and finds relevant articles from multiple news sources.
+            <div className="text-xs font-semibold text-indigo-600 dark:text-indigo-400 mb-1">AGENT 1</div>
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">UFA</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">User-Facing Agent</p>
+            <p className="text-gray-600 dark:text-gray-400 text-sm leading-relaxed">
+              The conversational interface that understands your questions. It extracts intent, identifies topics, time windows, and output preferences, then coordinates the other agents to fulfill your request.
             </p>
+            <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+              <div className="text-xs text-gray-500 dark:text-gray-500">Responsibilities:</div>
+              <ul className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-400">
+                <li className="flex items-center gap-2">
+                  <span className="w-1 h-1 rounded-full bg-indigo-500" />
+                  Parse natural language queries
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-1 h-1 rounded-full bg-indigo-500" />
+                  Extract topic & time constraints
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-1 h-1 rounded-full bg-indigo-500" />
+                  Manage conversation flow
+                </li>
+              </ul>
+            </div>
           </div>
 
-          {/* Step 2 */}
-          <div className="text-center">
-            <div className="w-16 h-16 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          {/* Analyst Agent */}
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+            <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center mb-4">
+              <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+              </svg>
+            </div>
+            <div className="text-xs font-semibold text-amber-600 dark:text-amber-400 mb-1">AGENT 2</div>
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Analyst</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Research Strategist</p>
+            <p className="text-gray-600 dark:text-gray-400 text-sm leading-relaxed">
+              The brain of the operation. It evaluates gathered information, decides if more research is needed, generates targeted search queries, and ultimately synthesizes the final comprehensive answer.
+            </p>
+            <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+              <div className="text-xs text-gray-500 dark:text-gray-500">Responsibilities:</div>
+              <ul className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-400">
+                <li className="flex items-center gap-2">
+                  <span className="w-1 h-1 rounded-full bg-amber-500" />
+                  Generate search queries
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-1 h-1 rounded-full bg-amber-500" />
+                  Evaluate information completeness
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-1 h-1 rounded-full bg-amber-500" />
+                  Synthesize final answer
+                </li>
+              </ul>
+            </div>
+          </div>
+
+          {/* Summarizer Agent */}
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
+            <div className="w-14 h-14 rounded-xl bg-gradient-to-br from-blue-500 to-cyan-600 flex items-center justify-center mb-4">
+              <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">2. Read & Extract</h3>
-            <p className="text-gray-600 dark:text-gray-400">
-              The Summarizer agent reads each article, extracting key facts, dates, people, and locations.
+            <div className="text-xs font-semibold text-blue-600 dark:text-blue-400 mb-1">AGENT 3</div>
+            <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Summarizer</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">Content Processor</p>
+            <p className="text-gray-600 dark:text-gray-400 text-sm leading-relaxed">
+              The workhorse that processes articles in parallel. It fetches full article content, extracts structured notes (who, what, when, where), and builds a knowledge base for the Analyst.
             </p>
-          </div>
-
-          {/* Step 3 */}
-          <div className="text-center">
-            <div className="w-16 h-16 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center mx-auto mb-4">
-              <svg className="w-8 h-8 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
+            <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
+              <div className="text-xs text-gray-500 dark:text-gray-500">Responsibilities:</div>
+              <ul className="mt-2 space-y-1 text-xs text-gray-600 dark:text-gray-400">
+                <li className="flex items-center gap-2">
+                  <span className="w-1 h-1 rounded-full bg-blue-500" />
+                  Fetch & parse articles
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-1 h-1 rounded-full bg-blue-500" />
+                  Extract structured facts
+                </li>
+                <li className="flex items-center gap-2">
+                  <span className="w-1 h-1 rounded-full bg-blue-500" />
+                  Process 30 articles in parallel
+                </li>
+              </ul>
             </div>
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">3. Synthesize</h3>
-            <p className="text-gray-600 dark:text-gray-400">
-              Information is combined into a comprehensive answer with TL;DR, key points, and full citations.
-            </p>
           </div>
+        </div>
+
+        {/* Agent Flow Diagram */}
+        <div className="mt-12 bg-gray-100 dark:bg-gray-800/50 rounded-2xl p-6 md:p-8">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6 text-center">How They Work Together</h3>
+          <div className="flex flex-col md:flex-row items-center justify-center gap-4 md:gap-2 text-sm">
+            <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+              <span className="w-3 h-3 rounded-full bg-indigo-500" />
+              <span className="text-gray-700 dark:text-gray-300">You ask a question</span>
+            </div>
+            <svg className="w-6 h-6 text-gray-400 rotate-90 md:rotate-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+            </svg>
+            <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+              <span className="w-3 h-3 rounded-full bg-indigo-500" />
+              <span className="text-gray-700 dark:text-gray-300">UFA parses intent</span>
+            </div>
+            <svg className="w-6 h-6 text-gray-400 rotate-90 md:rotate-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+            </svg>
+            <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+              <span className="w-3 h-3 rounded-full bg-amber-500" />
+              <span className="text-gray-700 dark:text-gray-300">Analyst searches</span>
+            </div>
+            <svg className="w-6 h-6 text-gray-400 rotate-90 md:rotate-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+            </svg>
+            <div className="flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+              <span className="w-3 h-3 rounded-full bg-blue-500" />
+              <span className="text-gray-700 dark:text-gray-300">Summarizer reads</span>
+            </div>
+            <svg className="w-6 h-6 text-gray-400 rotate-90 md:rotate-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+            </svg>
+            <div className="flex items-center gap-2 px-4 py-2 bg-green-100 dark:bg-green-900/30 rounded-lg shadow-sm">
+              <span className="w-3 h-3 rounded-full bg-green-500" />
+              <span className="text-gray-700 dark:text-gray-300">Answer with citations</span>
+            </div>
+          </div>
+          <p className="text-center text-xs text-gray-500 dark:text-gray-400 mt-4">
+            This loop repeats up to 10 times until the Analyst decides it has enough information
+          </p>
         </div>
       </div>
 
