@@ -1,0 +1,25 @@
+{
+  "functions": {
+    "src/app/api/chat/send/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/agents/analyst/run/route.ts": {
+      "maxDuration": 120
+    },
+    "src/app/api/agents/summarizer/run/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/cron/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/stream/route.ts": {
+      "maxDuration": 60
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron",
+      "schedule": "0 0 * * *"
+    }
+  ]
+}

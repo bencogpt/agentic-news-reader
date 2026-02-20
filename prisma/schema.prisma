@@ -1,0 +1,99 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Conversation {
+  id           String    @id @default(uuid())
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  activeTaskId String?
+  messages     Message[]
+  tasks        Task[]
+}
+
+model Message {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  role           String       // user | assistant | system
+  text           String
+  createdAt      DateTime     @default(now())
+  taskId         String?
+  task           Task?        @relation(fields: [taskId], references: [id])
+
+  @@index([conversationId])
+  @@index([taskId])
+}
+
+model Task {
+  id                String            @id @default(uuid())
+  conversationId    String
+  conversation      Conversation      @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  status            String            @default("DRAFT") // DRAFT | ACTIVE | RESEARCHING | WAITING_ANALYST | COMPLETED | FAILED | CANCELLED
+  title             String?
+  currentRequest    String?
+  notes             String?           @db.Text
+  summary           String?           @db.Text
+  response          String?           @db.Text
+  context           Json?
+  sources           Json?
+  lastUserMessageAt DateTime?
+  iterationCount    Int               @default(0)
+  requests          TaskRequest[]
+  iterations        SearchIteration[]
+  events            AgentEvent[]
+  messages          Message[]
+
+  @@index([conversationId])
+  @@index([status])
+}
+
+model TaskRequest {
+  id        String   @id @default(uuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  text      String
+  createdAt DateTime @default(now())
+
+  @@index([taskId])
+}
+
+model SearchIteration {
+  id               String       @id @default(uuid())
+  taskId           String
+  task             Task         @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+  status           String       @default("PENDING") // PENDING | RUNNING | DONE | FAILED
+  query            String
+  resultsCount     Int?
+  selectedArticles Json?
+  error            String?
+  events           AgentEvent[]
+
+  @@index([taskId])
+  @@index([status])
+}
+
+model AgentEvent {
+  id          String           @id @default(uuid())
+  taskId      String
+  task        Task             @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  iterationId String?
+  iteration   SearchIteration? @relation(fields: [iterationId], references: [id])
+  createdAt   DateTime         @default(now())
+  agent       String           // UFA | ANALYST | SUMMARIZER | SYSTEM
+  type        String
+  payload     Json?
+
+  @@index([taskId])
+  @@index([iterationId])
+  @@index([createdAt])
+}
