@@ -105,7 +105,7 @@ export function Chat() {
     }
   };
 
-  const sendMessage = useCallback(async (text: string, maxSearches: number = 1, freeTierMode: boolean = true, debugModeParam: boolean = false) => {
+  const sendMessage = useCallback(async (text: string, maxSearches: number = 1, freeTierMode: boolean = true, debugModeParam: boolean = false, provider: string = 'gnews') => {
     setIsLoading(true);
     setError(null);
     setDebugModeState(debugModeParam);
@@ -131,6 +131,7 @@ export function Chat() {
           message: text,
           maxSearches,
           freeTierMode,
+          provider,
         }),
       });
 

@@ -2,8 +2,10 @@
 
 import { useState, useRef, useEffect, KeyboardEvent, FormEvent } from 'react';
 
+type NewsProvider = 'gnews' | 'newsapi' | 'newsdata' | 'guardian';
+
 interface ChatInputProps {
-  onSend: (message: string, maxSearches: number, freeTierMode: boolean, debugMode: boolean) => void;
+  onSend: (message: string, maxSearches: number, freeTierMode: boolean, debugMode: boolean, provider: NewsProvider) => void;
   isLoading: boolean;
   placeholder?: string;
 }
@@ -13,6 +15,7 @@ export function ChatInput({ onSend, isLoading, placeholder }: ChatInputProps) {
   const [maxSearches, setMaxSearches] = useState(1);
   const [freeTierMode, setFreeTierMode] = useState(true); // Default to free tier
   const [debugMode, setDebugMode] = useState(false); // Debug mode off by default
+  const [provider, setProvider] = useState<NewsProvider>('gnews');
   const [showSettings, setShowSettings] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -28,7 +31,7 @@ export function ChatInput({ onSend, isLoading, placeholder }: ChatInputProps) {
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (message.trim() && !isLoading) {
-      onSend(message.trim(), maxSearches, freeTierMode, debugMode);
+      onSend(message.trim(), maxSearches, freeTierMode, debugMode, provider);
       setMessage('');
     }
   };
@@ -86,6 +89,28 @@ export function ChatInput({ onSend, isLoading, placeholder }: ChatInputProps) {
         {showSettings && (
           <div className="mt-2 p-3 bg-gray-100 dark:bg-gray-700 rounded-lg space-y-3">
             <div className="flex items-center justify-between">
+              <label className="text-sm text-gray-700 dark:text-gray-300">
+                News Provider
+              </label>
+              <select
+                value={provider}
+                onChange={(e) => setProvider(e.target.value as NewsProvider)}
+                className="bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded px-2 py-1 text-sm text-gray-900 dark:text-white"
+              >
+                <option value="gnews">GNews</option>
+                <option value="newsapi">NewsAPI (localhost only)</option>
+                <option value="newsdata">NewsData.io</option>
+                <option value="guardian">The Guardian</option>
+              </select>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {provider === 'gnews' && 'Free tier: 12h delay, 30-day history'}
+              {provider === 'newsapi' && 'Free tier only works on localhost'}
+              {provider === 'newsdata' && 'Free tier: 200 requests/day, no restrictions'}
+              {provider === 'guardian' && 'Free: 500 requests/day, UK-focused'}
+            </p>
+
+            <div className="border-t border-gray-200 dark:border-gray-600 pt-3 flex items-center justify-between">
               <label className="text-sm text-gray-700 dark:text-gray-300">
                 Max searches per request
               </label>

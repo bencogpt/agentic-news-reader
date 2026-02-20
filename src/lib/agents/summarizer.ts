@@ -62,13 +62,15 @@ export async function runSummarizer(iterationId: string): Promise<void> {
   }
 
   const task = iteration.task;
-  const context = (task.context as IntentSlots & { freeTierMode?: boolean }) || {};
+  type NewsProvider = 'gnews' | 'newsapi' | 'newsdata' | 'guardian';
+  const context = (task.context as IntentSlots & { freeTierMode?: boolean; provider?: NewsProvider }) || {};
   const slots: IntentSlots = {
     topic: context.topic,
     timeWindow: context.timeWindow,
     outputType: context.outputType,
   };
   const freeTierMode = context.freeTierMode !== false; // Default to true
+  const provider: NewsProvider = context.provider || 'gnews';
 
   try {
     // Update iteration status
@@ -89,6 +91,7 @@ export async function runSummarizer(iterationId: string): Promise<void> {
       to: slots.timeWindow?.end,
       pageSize: 30,
       freeTierMode,
+      provider,
     });
     const articles = searchResult.articles;
 
