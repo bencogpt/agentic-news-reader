@@ -59,24 +59,21 @@ export async function searchGNews(params: SearchParams): Promise<GNewsResult> {
   }
 
   // GNews date format: YYYY-MM-DDTHH:MM:SSZ
-  // For free tier: limit to 20 days ago to 1 day ago (avoid 12-hour delay and 30-day limit)
+  // For free tier: do NOT use date filters - GNews will return available articles
+  // (Free tier automatically excludes real-time data and limits to 30 days)
   let dateRange: { from: string; to: string } | undefined;
 
-  if (params.freeTierMode !== false) {
-    const now = new Date();
-    const fromDate = new Date(now);
-    fromDate.setDate(fromDate.getDate() - 20); // 20 days ago
-    const toDate = new Date(now);
-    toDate.setDate(toDate.getDate() - 3); // 3 days ago (safe buffer for free tier)
-
-    const fromStr = fromDate.toISOString().split('T')[0] + 'T00:00:00Z';
-    const toStr = toDate.toISOString().split('T')[0] + 'T23:59:59Z';
-
-    url.searchParams.set('from', fromStr);
-    url.searchParams.set('to', toStr);
-
-    dateRange = { from: fromStr.split('T')[0], to: toStr.split('T')[0] };
-    console.log(`[GNews] Free tier mode: searching ${dateRange.from} to ${dateRange.to}`);
+  if (params.freeTierMode === false && (params.from || params.to)) {
+    // Only use date filters if NOT in free tier mode
+    if (params.from) {
+      url.searchParams.set('from', params.from);
+    }
+    if (params.to) {
+      url.searchParams.set('to', params.to);
+    }
+    dateRange = { from: params.from || 'any', to: params.to || 'any' };
+  } else if (params.freeTierMode !== false) {
+    console.log('[GNews] Free tier mode: no date filters (GNews manages availability)');
   }
 
   // Add API key last
