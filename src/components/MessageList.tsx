@@ -51,9 +51,9 @@ export function MessageList({ messages, tasks, onSendMessage, isLoading }: Messa
           Note: Using GNews free tier (12-hour delay). Best for general topics, not breaking news.
         </p>
         <div className="grid gap-3 text-left">
-          <ExampleQuery text="What warning signs were ignored before the Titan submersible disaster?" onClick={onSendMessage} />
-          <ExampleQuery text="What did Boeing executives know about the 737 MAX flaws before the crashes?" onClick={onSendMessage} />
-          <ExampleQuery text="What theories exist about the disappearance of MH370?" onClick={onSendMessage} />
+          <ExampleQuery text="Which politicians received donations from FTX before its collapse?" onClick={onSendMessage} />
+          <ExampleQuery text="Which celebrities were seen at Diddy's parties now under investigation?" onClick={onSendMessage} />
+          <ExampleQuery text="Who sold their stocks right before major tech layoffs were announced?" onClick={onSendMessage} />
         </div>
       </div>
     );
