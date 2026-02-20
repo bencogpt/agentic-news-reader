@@ -25,18 +25,22 @@ interface ResearchProgressProps {
   events: AgentEvent[];
 }
 
+interface Phase {
+  id: string;
+  type: 'search' | 'reading' | 'analysis' | 'complete' | 'error';
+  title: string;
+  details: string[];
+  status: 'pending' | 'running' | 'done' | 'error';
+  url?: string;
+  source?: string;
+  articles?: Array<{ title: string; url: string; source: string }>;
+}
+
 export function ResearchProgress({ task, events }: ResearchProgressProps) {
   // Group events by phase
   const phases = useMemo(() => {
-    const result: Array<{
-      id: string;
-      type: 'search' | 'reading' | 'analysis' | 'complete' | 'error';
-      title: string;
-      details: string[];
-      status: 'pending' | 'running' | 'done' | 'error';
-    }> = [];
-
-    let currentSearch: typeof result[0] | null = null;
+    const result: Phase[] = [];
+    let currentSearch: Phase | null = null;
 
     for (const event of events) {
       switch (event.type) {
@@ -45,7 +49,7 @@ export function ResearchProgress({ task, events }: ResearchProgressProps) {
             id: event.id,
             type: 'analysis',
             title: 'Task created',
-            details: [`Request: ${(event.payload as { request?: string })?.request || 'Unknown'}`],
+            details: [(event.payload as { request?: string })?.request || 'Unknown'],
             status: 'done',
           });
           break;
@@ -61,13 +65,16 @@ export function ResearchProgress({ task, events }: ResearchProgressProps) {
           break;
 
         case 'ANALYST_DECISION': {
-          const payload = event.payload as { decision?: string; reason?: string };
+          const payload = event.payload as { decision?: string; reason?: string; query?: string };
           const lastAnalystPhase = result.find((p) => p.type === 'analysis' && p.status === 'running');
           if (lastAnalystPhase) {
             lastAnalystPhase.status = 'done';
-            lastAnalystPhase.details.push(`Decision: ${payload.decision}`);
-            if (payload.reason) {
-              lastAnalystPhase.details.push(`Reason: ${payload.reason}`);
+            if (payload.decision === 'SEARCH' && payload.query) {
+              lastAnalystPhase.details = [`Next search: "${payload.query}"`];
+            } else if (payload.decision === 'COMPLETE') {
+              lastAnalystPhase.details = ['Research complete - generating response'];
+            } else {
+              lastAnalystPhase.details = [payload.reason || `Decision: ${payload.decision}`];
             }
           }
           break;
@@ -78,45 +85,50 @@ export function ResearchProgress({ task, events }: ResearchProgressProps) {
           currentSearch = {
             id: event.id,
             type: 'search',
-            title: `Searching: "${payload.query}"`,
+            title: payload.query || 'Searching...',
             details: [],
             status: 'running',
+            articles: [],
           };
           result.push(currentSearch);
           break;
         }
 
         case 'SEARCH_STARTED':
-          if (currentSearch) {
-            currentSearch.details.push('Querying NewsAPI...');
-          }
+          // No need to add details, keep it clean
           break;
 
         case 'SEARCH_RESULTS': {
-          const payload = event.payload as { count?: number };
+          const payload = event.payload as { count?: number; articles?: Array<{ title: string; url: string; source: string }> };
           if (currentSearch) {
-            currentSearch.details.push(`Found ${payload.count || 0} articles`);
+            currentSearch.details = [`Found ${payload.count || 0} articles`];
+            currentSearch.articles = payload.articles || [];
             currentSearch.status = 'done';
           }
           break;
         }
 
         case 'ARTICLE_READING_STARTED': {
-          const payload = event.payload as { articleTitle?: string };
+          const payload = event.payload as { articleTitle?: string; articleUrl?: string };
           result.push({
             id: event.id,
             type: 'reading',
-            title: `Reading: ${truncate(payload.articleTitle || 'Unknown', 50)}`,
+            title: payload.articleTitle || 'Unknown article',
             details: [],
             status: 'running',
+            url: payload.articleUrl,
           });
           break;
         }
 
         case 'ARTICLE_READING_DONE': {
+          const payload = event.payload as { articleUrl?: string };
           const lastReading = [...result].reverse().find((p) => p.type === 'reading' && p.status === 'running');
           if (lastReading) {
             lastReading.status = 'done';
+            if (payload.articleUrl) {
+              lastReading.url = payload.articleUrl;
+            }
           }
           break;
         }
@@ -212,7 +224,7 @@ export function ResearchProgress({ task, events }: ResearchProgressProps) {
   );
 }
 
-function PhaseItem({ phase }: { phase: { type: string; title: string; details: string[]; status: string } }) {
+function PhaseItem({ phase }: { phase: Phase }) {
   const iconClass = {
     search: 'text-purple-500',
     reading: 'text-blue-500',
@@ -220,6 +232,14 @@ function PhaseItem({ phase }: { phase: { type: string; title: string; details: s
     complete: 'text-green-500',
     error: 'text-red-500',
   }[phase.type] || 'text-gray-500';
+
+  const bgClass = {
+    search: 'bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800',
+    reading: 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800',
+    analysis: 'bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800',
+    complete: 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800',
+    error: 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800',
+  }[phase.type] || 'bg-gray-50 dark:bg-gray-800';
 
   const icon = {
     search: (
@@ -249,8 +269,78 @@ function PhaseItem({ phase }: { phase: { type: string; title: string; details: s
     ),
   }[phase.type];
 
+  // For reading phases, show as a compact link
+  if (phase.type === 'reading') {
+    return (
+      <div className={`flex items-center gap-2 px-3 py-2 rounded-lg border ${bgClass}`}>
+        <div className="flex-shrink-0">
+          {phase.status === 'running' ? (
+            <div className={`w-3 h-3 border-2 border-current ${iconClass} border-t-transparent rounded-full animate-spin`} />
+          ) : (
+            <svg className={`w-3 h-3 ${iconClass}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          {phase.url ? (
+            <a
+              href={phase.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs text-blue-600 dark:text-blue-400 hover:underline truncate block"
+              title={phase.title}
+            >
+              {phase.title}
+            </a>
+          ) : (
+            <span className="text-xs text-gray-700 dark:text-gray-300 truncate block">{phase.title}</span>
+          )}
+        </div>
+        {phase.details.length > 0 && (
+          <span className="text-xs text-gray-400 flex-shrink-0">{phase.details[0]}</span>
+        )}
+      </div>
+    );
+  }
+
+  // For search phases, show articles list
+  if (phase.type === 'search' && phase.articles && phase.articles.length > 0) {
+    return (
+      <div className={`rounded-lg border ${bgClass} overflow-hidden`}>
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-inherit">
+          <div className="flex-shrink-0">
+            {phase.status === 'running' ? (
+              <div className={`w-4 h-4 border-2 border-current ${iconClass} border-t-transparent rounded-full animate-spin`} />
+            ) : (
+              icon
+            )}
+          </div>
+          <span className="text-sm font-medium text-gray-900 dark:text-white">{phase.title}</span>
+          <span className="text-xs text-gray-500 ml-auto">{phase.articles.length} articles</span>
+        </div>
+        <div className="px-3 py-2 space-y-1 max-h-40 overflow-y-auto">
+          {phase.articles.map((article, idx) => (
+            <a
+              key={idx}
+              href={article.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2 text-xs hover:bg-white/50 dark:hover:bg-gray-800/50 rounded px-1 py-0.5 -mx-1"
+            >
+              <span className="text-gray-400">{idx + 1}.</span>
+              <span className="text-blue-600 dark:text-blue-400 hover:underline truncate flex-1">{article.title}</span>
+              <span className="text-gray-400 flex-shrink-0">{article.source}</span>
+            </a>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  // Default rendering for other phases
   return (
-    <div className="flex items-start gap-3 py-2 border-l-2 border-gray-200 dark:border-gray-700 pl-3 ml-2">
+    <div className={`flex items-start gap-3 px-3 py-2 rounded-lg border ${bgClass}`}>
       <div className="flex-shrink-0 mt-0.5">
         {phase.status === 'running' ? (
           <div className={`w-4 h-4 border-2 border-current ${iconClass} border-t-transparent rounded-full animate-spin`} />
@@ -274,9 +364,4 @@ function PhaseItem({ phase }: { phase: { type: string; title: string; details: s
       </div>
     </div>
   );
-}
-
-function truncate(str: string, maxLength: number): string {
-  if (str.length <= maxLength) return str;
-  return str.slice(0, maxLength - 3) + '...';
 }

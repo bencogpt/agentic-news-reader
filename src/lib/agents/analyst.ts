@@ -37,12 +37,25 @@ If information is INSUFFICIENT or could be MORE COMPREHENSIVE, generate a SEARCH
 - Consider different angles: who, what, when, where, why, reactions, analysis
 - Search for opposing viewpoints and different perspectives
 
-If information is TRULY COMPREHENSIVE (many sources, multiple angles), produce the FINAL ANSWER:
-- Provide a thorough, detailed answer
-- Include specific dates, names, places
-- Cite MANY sources using [1], [2], [3], etc.
-- Match the requested output type (summary, timeline, etc.)
-- Be factual and note areas of disagreement between sources
+If information is TRULY COMPREHENSIVE (many sources, multiple angles), produce the FINAL ANSWER with this EXACT structure:
+
+**TL;DR:** [One sentence summary of the key finding]
+
+**Key Points:**
+• [Main point 1 with citation [1]]
+• [Main point 2 with citation [2]]
+• [Main point 3 with citation [3]]
+• [Continue for all key points...]
+
+**Detailed Analysis:**
+[Full detailed answer organized in paragraphs. Include specific dates, names, places. Cite sources throughout using [1], [2], [3], etc. Note areas where sources disagree. Be comprehensive but readable.]
+
+FORMAT RULES:
+- Start with TL;DR (one sentence max)
+- Key Points should be 4-8 bullet points capturing the main facts
+- Detailed Analysis should be 2-4 paragraphs with full context
+- EVERY claim must have a citation
+- Use bullet points (•) not dashes
 
 You MUST respond with a JSON object:
 {

@@ -113,39 +113,125 @@ function MessageBubble({ message }: { message: Message }) {
 function FinalResponse({ task }: { task: Task }) {
   if (!task.response) return null;
 
+  // Parse the structured response
+  const sections = parseResponse(task.response);
+
   return (
-    <div className="mt-4 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-xl p-4">
-      <div className="flex items-center gap-2 mb-3">
+    <div className="mt-4 bg-gradient-to-br from-green-50 to-emerald-50 dark:from-green-900/20 dark:to-emerald-900/20 border border-green-200 dark:border-green-800 rounded-xl overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-2 px-4 py-3 bg-green-100/50 dark:bg-green-900/30 border-b border-green-200 dark:border-green-800">
         <svg className="w-5 h-5 text-green-600 dark:text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>
         <span className="font-medium text-green-800 dark:text-green-200">Research Complete</span>
+        {task.sources && (
+          <span className="text-xs text-green-600 dark:text-green-400 ml-auto">{task.sources.length} sources</span>
+        )}
       </div>
-      <div className="prose prose-sm dark:prose-invert max-w-none">
-        <p className="text-gray-800 dark:text-gray-200 whitespace-pre-wrap">{task.response}</p>
+
+      <div className="p-4 space-y-4">
+        {/* TL;DR */}
+        {sections.tldr && (
+          <div className="bg-white/60 dark:bg-gray-800/60 rounded-lg p-3 border border-green-100 dark:border-green-900">
+            <div className="text-xs font-semibold text-green-700 dark:text-green-400 mb-1">TL;DR</div>
+            <p className="text-gray-800 dark:text-gray-200 font-medium">{sections.tldr}</p>
+          </div>
+        )}
+
+        {/* Key Points */}
+        {sections.keyPoints.length > 0 && (
+          <div>
+            <div className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">KEY POINTS</div>
+            <ul className="space-y-2">
+              {sections.keyPoints.map((point, idx) => (
+                <li key={idx} className="flex items-start gap-2">
+                  <span className="text-green-500 mt-1">•</span>
+                  <span className="text-gray-700 dark:text-gray-300 text-sm">{point}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* Detailed Analysis */}
+        {sections.detailed && (
+          <div>
+            <div className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">DETAILED ANALYSIS</div>
+            <div className="text-gray-700 dark:text-gray-300 text-sm space-y-2 leading-relaxed">
+              {sections.detailed.split('\n\n').map((para, idx) => (
+                <p key={idx}>{para}</p>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Fallback for unstructured responses */}
+        {!sections.tldr && sections.keyPoints.length === 0 && !sections.detailed && (
+          <div className="text-gray-700 dark:text-gray-300 text-sm whitespace-pre-wrap leading-relaxed">
+            {task.response}
+          </div>
+        )}
       </div>
+
+      {/* Sources */}
       {task.sources && task.sources.length > 0 && (
-        <div className="mt-4 pt-4 border-t border-green-200 dark:border-green-800">
-          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Sources</h4>
-          <ul className="space-y-1">
+        <div className="px-4 py-3 bg-gray-50 dark:bg-gray-800/50 border-t border-green-200 dark:border-green-800">
+          <div className="text-xs font-semibold text-gray-600 dark:text-gray-400 mb-2">SOURCES</div>
+          <div className="grid gap-1">
             {task.sources.map((source, idx) => (
-              <li key={idx} className="text-sm">
-                <a
-                  href={source.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 dark:text-blue-400 hover:underline"
-                >
-                  [{source.number || idx + 1}] {source.title}
-                </a>
-                <span className="text-gray-500 dark:text-gray-400"> - {source.source}</span>
-              </li>
+              <a
+                key={idx}
+                href={source.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 text-xs hover:bg-white/50 dark:hover:bg-gray-700/50 rounded px-2 py-1 -mx-2 group"
+              >
+                <span className="text-green-600 dark:text-green-400 font-medium">[{source.number || idx + 1}]</span>
+                <span className="text-blue-600 dark:text-blue-400 group-hover:underline truncate flex-1">{source.title}</span>
+                <span className="text-gray-400 flex-shrink-0">{source.source}</span>
+              </a>
             ))}
-          </ul>
+          </div>
         </div>
       )}
     </div>
   );
+}
+
+function parseResponse(response: string): { tldr: string | null; keyPoints: string[]; detailed: string | null } {
+  const result = { tldr: null as string | null, keyPoints: [] as string[], detailed: null as string | null };
+
+  // Extract TL;DR (first line after **TL;DR:**)
+  const tldrMatch = response.match(/\*\*TL;DR:\*\*\s*([^\n]+)/i);
+  if (tldrMatch) {
+    result.tldr = tldrMatch[1].trim();
+  }
+
+  // Extract Key Points section
+  const keyPointsStart = response.search(/\*\*Key Points:\*\*/i);
+  const detailedStart = response.search(/\*\*Detailed Analysis:\*\*/i);
+
+  if (keyPointsStart !== -1) {
+    const endIndex = detailedStart !== -1 ? detailedStart : response.length;
+    const keyPointsSection = response.slice(keyPointsStart, endIndex);
+    const points = keyPointsSection.match(/[•\-\*]\s*([^\n]+)/g);
+    if (points) {
+      result.keyPoints = points.map(p => p.replace(/^[•\-\*]\s*/, '').trim());
+    }
+  }
+
+  // Extract Detailed Analysis
+  if (detailedStart !== -1) {
+    let detailed = response.slice(detailedStart).replace(/\*\*Detailed Analysis:\*\*/i, '').trim();
+    // Remove any trailing sections
+    const nextSection = detailed.search(/\*\*[A-Z]/);
+    if (nextSection !== -1) {
+      detailed = detailed.slice(0, nextSection);
+    }
+    result.detailed = detailed.trim();
+  }
+
+  return result;
 }
 
 function ThinkingIndicator() {
