@@ -47,10 +47,13 @@ export function MessageList({ messages, tasks, onSendMessage, isLoading }: Messa
           Ask me about news and I&apos;ll research it for you. I&apos;ll search multiple sources,
           read articles, and synthesize the information into a comprehensive answer.
         </p>
+        <p className="text-xs text-gray-500 dark:text-gray-500 max-w-md mb-4">
+          Note: Using GNews free tier (12-hour delay). Best for general topics, not breaking news.
+        </p>
         <div className="grid gap-3 text-left">
-          <ExampleQuery text="Where was Trump yesterday?" onClick={onSendMessage} />
-          <ExampleQuery text="What's the latest on AI regulations?" onClick={onSendMessage} />
-          <ExampleQuery text="Summarize tech news from last week" onClick={onSendMessage} />
+          <ExampleQuery text="What is the EU AI Act and its implications?" onClick={onSendMessage} />
+          <ExampleQuery text="How has AI impacted the job market?" onClick={onSendMessage} />
+          <ExampleQuery text="What happened with OpenAI's leadership changes?" onClick={onSendMessage} />
         </div>
       </div>
     );
