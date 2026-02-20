@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect, KeyboardEvent, FormEvent } from 'react';
 
 interface ChatInputProps {
-  onSend: (message: string, maxSearches: number) => void;
+  onSend: (message: string, maxSearches: number, freeTierMode: boolean, debugMode: boolean) => void;
   isLoading: boolean;
   placeholder?: string;
 }
@@ -11,6 +11,8 @@ interface ChatInputProps {
 export function ChatInput({ onSend, isLoading, placeholder }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const [maxSearches, setMaxSearches] = useState(1);
+  const [freeTierMode, setFreeTierMode] = useState(true); // Default to free tier
+  const [debugMode, setDebugMode] = useState(false); // Debug mode off by default
   const [showSettings, setShowSettings] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -26,7 +28,7 @@ export function ChatInput({ onSend, isLoading, placeholder }: ChatInputProps) {
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
     if (message.trim() && !isLoading) {
-      onSend(message.trim(), maxSearches);
+      onSend(message.trim(), maxSearches, freeTierMode, debugMode);
       setMessage('');
     }
   };
@@ -82,7 +84,7 @@ export function ChatInput({ onSend, isLoading, placeholder }: ChatInputProps) {
         </div>
         {/* Settings panel */}
         {showSettings && (
-          <div className="mt-2 p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
+          <div className="mt-2 p-3 bg-gray-100 dark:bg-gray-700 rounded-lg space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-sm text-gray-700 dark:text-gray-300">
                 Max searches per request
@@ -98,9 +100,43 @@ export function ChatInput({ onSend, isLoading, placeholder }: ChatInputProps) {
                 <option value={10}>10 (thorough)</option>
               </select>
             </div>
-            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+            <p className="text-xs text-gray-500 dark:text-gray-400">
               More searches = more sources but uses more API quota
             </p>
+
+            <div className="border-t border-gray-200 dark:border-gray-600 pt-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={freeTierMode}
+                  onChange={(e) => setFreeTierMode(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-700 dark:text-gray-300">
+                  GNews Free Tier Mode
+                </span>
+              </label>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Free tier has 12-hour delay. Avoids searching for &quot;latest&quot; or date-specific news.
+              </p>
+            </div>
+
+            <div className="border-t border-gray-200 dark:border-gray-600 pt-3">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={debugMode}
+                  onChange={(e) => setDebugMode(e.target.checked)}
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-700 dark:text-gray-300">
+                  Debug Mode
+                </span>
+              </label>
+              <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                Shows full API URL with key in research pane for troubleshooting.
+              </p>
+            </div>
           </div>
         )}
         <p className="mt-2 text-xs text-center text-gray-500 dark:text-gray-400">

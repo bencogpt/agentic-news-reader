@@ -84,6 +84,7 @@ interface AnalystInput {
   sources: Array<{ title: string; url: string; source: string }>;
   iterationCount: number;
   maxSearches?: number;
+  freeTierMode?: boolean;
 }
 
 interface AnalystResponse {
@@ -95,7 +96,7 @@ interface AnalystResponse {
 }
 
 export async function runAnalyst(input: AnalystInput): Promise<AnalystDecision> {
-  const { taskId, request, slots, notes, summary, sources, iterationCount, maxSearches } = input;
+  const { taskId, request, slots, notes, summary, sources, iterationCount, maxSearches, freeTierMode = true } = input;
 
   // Use maxSearches from input, or fall back to env var, or default to 1
   const maxIterations = maxSearches || MAX_ITERATIONS;
@@ -140,7 +141,7 @@ export async function runAnalyst(input: AnalystInput): Promise<AnalystDecision> 
   }
 
   // Build prompt with current state
-  const userPrompt = buildAnalystPrompt(request, slots, notes, summary, sources, iterationCount, maxIterations, forceComplete);
+  const userPrompt = buildAnalystPrompt(request, slots, notes, summary, sources, iterationCount, maxIterations, forceComplete, freeTierMode);
 
   try {
     const response = await generateCompletion({
@@ -291,7 +292,8 @@ function buildAnalystPrompt(
   sources: Array<{ title: string; url: string; source: string }>,
   iterationCount: number,
   maxIterations: number,
-  forceComplete: boolean
+  forceComplete: boolean,
+  freeTierMode: boolean
 ): string {
   let prompt = `## USER REQUEST\n${request}\n\n`;
 
@@ -324,6 +326,19 @@ function buildAnalystPrompt(
     prompt += '\n';
   } else {
     prompt += `## SOURCES USED\nNone yet.\n\n`;
+  }
+
+  if (freeTierMode) {
+    prompt += `\n## FREE TIER MODE (12-hour delay)
+The news API is on a free tier with a 12-hour delay. When generating SEARCH queries:
+- Do NOT use words like "latest", "recent", "today", "breaking", "just", "now"
+- Do NOT include specific dates (like "February 2026" or "2026")
+- Do NOT include time references like "this week", "yesterday", "this month"
+- Focus on the TOPIC itself, not when it happened
+- Use general terms that will match older articles
+
+Good query examples: "AI regulations policy", "artificial intelligence laws", "tech regulation"
+Bad query examples: "latest AI news February 2026", "recent AI regulations", "AI news today"\n\n`;
   }
 
   if (forceComplete) {

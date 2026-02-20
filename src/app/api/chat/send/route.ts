@@ -10,6 +10,7 @@ interface SendRequest {
   conversationId?: string;
   message: string;
   maxSearches?: number;
+  freeTierMode?: boolean;
 }
 
 export async function POST(request: NextRequest) {
@@ -90,7 +91,7 @@ export async function POST(request: NextRequest) {
 
       if (task && (task.status === 'ACTIVE' || task.status === 'WAITING_ANALYST')) {
         // Run analyst asynchronously (don't await to return quickly)
-        triggerAnalyst(task.id, body.maxSearches || 1).catch((error) => {
+        triggerAnalyst(task.id, body.maxSearches || 1, body.freeTierMode !== false).catch((error) => {
           console.error('Error triggering analyst:', error);
         });
       }
@@ -116,7 +117,7 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function triggerAnalyst(taskId: string, maxSearches: number = 1): Promise<void> {
+async function triggerAnalyst(taskId: string, maxSearches: number = 1, freeTierMode: boolean = true): Promise<void> {
   const task = await prisma.task.findUnique({
     where: { id: taskId },
   });
@@ -135,6 +136,7 @@ async function triggerAnalyst(taskId: string, maxSearches: number = 1): Promise<
     sources,
     iterationCount: task.iterationCount,
     maxSearches,
+    freeTierMode,
   });
 
   await processAnalystDecision(taskId, decision);
@@ -160,7 +162,7 @@ async function triggerAnalyst(taskId: string, maxSearches: number = 1): Promise<
         });
 
         if (updatedTask && updatedTask.status === 'WAITING_ANALYST') {
-          await triggerAnalyst(taskId, maxSearches);
+          await triggerAnalyst(taskId, maxSearches, freeTierMode);
         }
       } catch (error) {
         console.error('Error in summarizer:', error);

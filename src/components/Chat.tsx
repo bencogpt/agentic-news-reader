@@ -41,6 +41,7 @@ export function Chat() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isResearchOpen, setIsResearchOpen] = useState(true);
+  const [debugMode, setDebugModeState] = useState(false);
   const eventSourceRef = useRef<EventSource | null>(null);
   const lastEventTimestampRef = useRef<string | null>(null);
 
@@ -104,9 +105,10 @@ export function Chat() {
     }
   };
 
-  const sendMessage = useCallback(async (text: string, maxSearches: number = 1) => {
+  const sendMessage = useCallback(async (text: string, maxSearches: number = 1, freeTierMode: boolean = true, debugModeParam: boolean = false) => {
     setIsLoading(true);
     setError(null);
+    setDebugModeState(debugModeParam);
 
     // Optimistic update: Add user message immediately
     const tempUserMessageId = `user-${Date.now()}`;
@@ -128,6 +130,7 @@ export function Chat() {
           conversationId,
           message: text,
           maxSearches,
+          freeTierMode,
         }),
       });
 
@@ -238,6 +241,7 @@ export function Chat() {
           <ResearchProgress
             task={displayTask}
             events={taskEvents}
+            debugMode={debugMode}
           />
         </div>
       )}
@@ -280,6 +284,7 @@ export function Chat() {
             <ResearchProgress
               task={displayTask}
               events={taskEvents}
+              debugMode={debugMode}
             />
           </div>
         )}
