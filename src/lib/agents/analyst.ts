@@ -129,23 +129,11 @@ export async function runAnalyst(input: AnalystInput): Promise<AnalystDecision> 
     sourceCount: sources.length,
   });
 
-  // Check if we've exceeded max iterations
-  if (iterationCount >= maxIterations) {
-    const failDecision: AnalystDecision = {
-      type: 'FAIL',
-      reason: `Research limit reached after ${maxIterations} search iterations. Could not gather sufficient information to answer the question confidently.`,
-    };
-
-    await emitEvent(taskId, 'ANALYST', 'ANALYST_DECISION', {
-      decision: 'FAIL',
-      reason: failDecision.reason,
-    });
-
-    return failDecision;
-  }
+  // Check if we've reached max iterations - force completion with available info
+  const forceComplete = iterationCount >= maxIterations;
 
   // Build prompt with current state
-  const userPrompt = buildAnalystPrompt(request, slots, notes, summary, sources, iterationCount, maxIterations);
+  const userPrompt = buildAnalystPrompt(request, slots, notes, summary, sources, iterationCount, maxIterations, forceComplete);
 
   try {
     const response = await generateCompletion({
@@ -260,7 +248,8 @@ function buildAnalystPrompt(
   summary: string | null,
   sources: Array<{ title: string; url: string; source: string }>,
   iterationCount: number,
-  maxIterations: number
+  maxIterations: number,
+  forceComplete: boolean
 ): string {
   let prompt = `## USER REQUEST\n${request}\n\n`;
 
@@ -293,6 +282,10 @@ function buildAnalystPrompt(
     prompt += '\n';
   } else {
     prompt += `## SOURCES USED\nNone yet.\n\n`;
+  }
+
+  if (forceComplete) {
+    prompt += `\n## IMPORTANT: You have reached the maximum number of search iterations (${maxIterations}). You MUST return COMPLETE with the best answer possible based on the information gathered. Do NOT return SEARCH or FAIL.\n\n`;
   }
 
   prompt += `Based on the above, decide: SEARCH for more information, COMPLETE with a final answer, or FAIL if unable to answer after sufficient attempts.`;

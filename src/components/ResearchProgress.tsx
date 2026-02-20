@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
 interface AgentEvent {
   id: string;
@@ -35,6 +35,8 @@ interface Phase {
   source?: string;
   articles?: Array<{ title: string; url: string; source: string }>;
   requestUrl?: string; // GNews API request URL for debugging
+  notes?: Record<string, string[]>; // Notes extracted from article
+  summary?: string; // Summary text
 }
 
 export function ResearchProgress({ task, events }: ResearchProgressProps) {
@@ -141,19 +143,23 @@ export function ResearchProgress({ task, events }: ResearchProgressProps) {
           if (lastReading && payload.notes) {
             const noteCount = Object.values(payload.notes).flat().length;
             lastReading.details.push(`Extracted ${noteCount} notes`);
+            lastReading.notes = payload.notes;
           }
           break;
         }
 
-        case 'SUMMARY_UPDATED':
+        case 'SUMMARY_UPDATED': {
+          const payload = event.payload as { summary?: string };
           result.push({
             id: event.id,
             type: 'analysis',
             title: 'Summary updated',
             details: ['Synthesizing information from all sources'],
             status: 'done',
+            summary: payload.summary,
           });
           break;
+        }
 
         case 'RESPONSE_FINALIZED':
           result.push({
@@ -227,6 +233,8 @@ export function ResearchProgress({ task, events }: ResearchProgressProps) {
 }
 
 function PhaseItem({ phase }: { phase: Phase }) {
+  const [expanded, setExpanded] = useState(false);
+
   const iconClass = {
     search: 'text-purple-500',
     reading: 'text-blue-500',
@@ -263,36 +271,58 @@ function PhaseItem({ phase }: { phase: Phase }) {
     ),
   }[phase.type];
 
-  // For reading phases, show as a compact link
+  // For reading phases, show as a compact link with expandable notes
   if (phase.type === 'reading') {
+    const hasNotes = phase.notes && Object.values(phase.notes).flat().length > 0;
     return (
-      <div className="flex items-center gap-2 py-1.5 border-b border-gray-100 dark:border-gray-700/50 last:border-0">
-        <div className="flex-shrink-0">
-          {phase.status === 'running' ? (
-            <div className={`w-3 h-3 border-2 border-current ${iconClass} border-t-transparent rounded-full animate-spin`} />
-          ) : (
-            <svg className={`w-3 h-3 ${iconClass}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-            </svg>
-          )}
-        </div>
-        <div className="flex-1 min-w-0">
-          {phase.url ? (
-            <a
-              href={phase.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="text-xs text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 hover:underline truncate block"
-              title={phase.title}
+      <div className="border-b border-gray-100 dark:border-gray-700/50 last:border-0">
+        <div className="flex items-center gap-2 py-1.5">
+          <div className="flex-shrink-0">
+            {phase.status === 'running' ? (
+              <div className={`w-3 h-3 border-2 border-current ${iconClass} border-t-transparent rounded-full animate-spin`} />
+            ) : (
+              <svg className={`w-3 h-3 ${iconClass}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            {phase.url ? (
+              <a
+                href={phase.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 hover:underline truncate block"
+                title={phase.title}
+              >
+                {phase.title}
+              </a>
+            ) : (
+              <span className="text-xs text-gray-700 dark:text-gray-300 truncate block">{phase.title}</span>
+            )}
+          </div>
+          {hasNotes && (
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="text-xs text-blue-500 hover:text-blue-600 hover:underline flex-shrink-0"
             >
-              {phase.title}
-            </a>
-          ) : (
-            <span className="text-xs text-gray-700 dark:text-gray-300 truncate block">{phase.title}</span>
+              {expanded ? 'hide' : `${Object.values(phase.notes!).flat().length} notes`}
+            </button>
           )}
         </div>
-        {phase.details.length > 0 && (
-          <span className="text-xs text-gray-400 flex-shrink-0">{phase.details[0]}</span>
+        {expanded && phase.notes && (
+          <div className="pl-5 pb-2 text-xs space-y-1">
+            {Object.entries(phase.notes).map(([key, values]) => (
+              values.length > 0 && (
+                <div key={key}>
+                  <span className="text-gray-500 dark:text-gray-400 capitalize">{key.replace(/([A-Z])/g, ' $1').trim()}:</span>
+                  <ul className="ml-2 text-gray-600 dark:text-gray-300">
+                    {values.map((v, i) => <li key={i}>• {v}</li>)}
+                  </ul>
+                </div>
+              )
+            ))}
+          </div>
         )}
       </div>
     );
@@ -310,17 +340,18 @@ function PhaseItem({ phase }: { phase: Phase }) {
               icon
             )}
           </div>
-          <span className="text-sm font-medium text-gray-900 dark:text-white truncate flex-1">{phase.title}</span>
-          {phase.requestUrl && (
+          {phase.requestUrl ? (
             <a
               href={phase.requestUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="text-xs text-purple-500 hover:text-purple-600 hover:underline flex-shrink-0"
-              title="View API request"
+              className="text-sm font-medium text-gray-900 dark:text-white truncate flex-1 hover:text-purple-600 dark:hover:text-purple-400 hover:underline"
+              title="View search results"
             >
-              API
+              {phase.title}
             </a>
+          ) : (
+            <span className="text-sm font-medium text-gray-900 dark:text-white truncate flex-1">{phase.title}</span>
           )}
           <span className="text-xs text-gray-400">{phase.articles.length} found</span>
         </div>
@@ -344,29 +375,48 @@ function PhaseItem({ phase }: { phase: Phase }) {
   }
 
   // Default rendering for other phases
+  const hasSummary = phase.summary && phase.summary.length > 0;
+
   return (
-    <div className="flex items-start gap-3 py-2">
-      <div className="flex-shrink-0 mt-0.5">
-        {phase.status === 'running' ? (
-          <div className={`w-4 h-4 border-2 border-current ${iconClass} border-t-transparent rounded-full animate-spin`} />
-        ) : (
-          icon
-        )}
+    <div className="py-2">
+      <div className="flex items-start gap-3">
+        <div className="flex-shrink-0 mt-0.5">
+          {phase.status === 'running' ? (
+            <div className={`w-4 h-4 border-2 border-current ${iconClass} border-t-transparent rounded-full animate-spin`} />
+          ) : (
+            icon
+          )}
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <p className={`text-sm ${phase.status === 'error' ? 'text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-300'}`}>
+              {phase.title}
+            </p>
+            {hasSummary && (
+              <button
+                onClick={() => setExpanded(!expanded)}
+                className="text-xs text-amber-500 hover:text-amber-600 hover:underline"
+              >
+                {expanded ? 'hide' : 'show'}
+              </button>
+            )}
+          </div>
+          {phase.details.length > 0 && !expanded && (
+            <ul className="mt-0.5 space-y-0.5">
+              {phase.details.map((detail, idx) => (
+                <li key={idx} className="text-xs text-gray-400 dark:text-gray-500">
+                  {detail}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </div>
-      <div className="flex-1 min-w-0">
-        <p className={`text-sm ${phase.status === 'error' ? 'text-red-600 dark:text-red-400' : 'text-gray-700 dark:text-gray-300'}`}>
-          {phase.title}
-        </p>
-        {phase.details.length > 0 && (
-          <ul className="mt-0.5 space-y-0.5">
-            {phase.details.map((detail, idx) => (
-              <li key={idx} className="text-xs text-gray-400 dark:text-gray-500">
-                {detail}
-              </li>
-            ))}
-          </ul>
-        )}
-      </div>
+      {expanded && phase.summary && (
+        <div className="mt-2 ml-7 p-3 bg-amber-50 dark:bg-amber-900/20 rounded-lg text-xs text-gray-700 dark:text-gray-300 whitespace-pre-wrap max-h-48 overflow-y-auto">
+          {phase.summary}
+        </div>
+      )}
     </div>
   );
 }
