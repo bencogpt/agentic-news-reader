@@ -81,6 +81,10 @@ export async function searchGNews(params: SearchParams): Promise<ArticleMeta[]> 
         continue;
       }
 
+      if (response.status === 401) {
+        throw new Error('GNews API key is invalid: ' + url.toString());
+      }
+
       if (!response.ok) {
         const errorBody = await response.text();
         throw new Error(`GNews API error ${response.status}: ${errorBody}`);
