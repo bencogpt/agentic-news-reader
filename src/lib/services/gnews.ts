@@ -50,11 +50,6 @@ export async function searchGNews(params: SearchParams): Promise<GNewsResult> {
   url.searchParams.set('lang', 'en');
   url.searchParams.set('country', 'us');
   url.searchParams.set('max', String(params.pageSize || 10));
-  url.searchParams.set('apikey', apiKey);
-
-  // Create a display URL without the API key
-  const displayUrl = new URL(url.toString());
-  displayUrl.searchParams.set('apikey', 'YOUR_API_KEY');
 
   // GNews uses sortby (lowercase)
   if (params.sortBy) {
@@ -62,12 +57,23 @@ export async function searchGNews(params: SearchParams): Promise<GNewsResult> {
   }
 
   // GNews date format: YYYY-MM-DDTHH:MM:SSZ
-  if (params.from) {
-    url.searchParams.set('from', params.from);
-  }
-  if (params.to) {
-    url.searchParams.set('to', params.to);
-  }
+  // Note: Removing date filters as they may be too restrictive
+  // and GNews free tier has limited historical data
+  // if (params.from) {
+  //   url.searchParams.set('from', params.from);
+  // }
+  // if (params.to) {
+  //   url.searchParams.set('to', params.to);
+  // }
+
+  // Add API key last
+  url.searchParams.set('apikey', apiKey);
+
+  // Create a display URL without the API key (after all params are set)
+  const displayUrl = new URL(url.toString());
+  displayUrl.searchParams.set('apikey', 'YOUR_API_KEY');
+
+  console.log(`[GNews] Request URL: ${displayUrl.toString()}`);
 
   let lastError: Error | null = null;
 
