@@ -31,7 +31,7 @@ export function ChatInput({ onSend, isLoading, placeholder }: ChatInputProps) {
   const [maxSearches, setMaxSearches] = useState(1);
   const [debugMode, setDebugMode] = useState(false);
   const [provider, setProvider] = useState<NewsProvider>('gnews');
-  const [showSettings, setShowSettings] = useState(false);
+  const [showSettings, setShowSettings] = useState(true);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -72,6 +72,7 @@ export function ChatInput({ onSend, isLoading, placeholder }: ChatInputProps) {
     if (message.trim() && !isLoading) {
       onSend(message.trim(), maxSearches, debugMode, provider);
       setMessage('');
+      setShowSettings(false); // Close settings after first message
     }
   };
 
