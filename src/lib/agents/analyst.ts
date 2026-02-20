@@ -329,16 +329,30 @@ function buildAnalystPrompt(
   }
 
   if (freeTierMode) {
-    prompt += `\n## FREE TIER MODE (12-hour delay)
-The news API is on a free tier with a 12-hour delay. When generating SEARCH queries:
-- Do NOT use words like "latest", "recent", "today", "breaking", "just", "now"
-- Do NOT include specific dates (like "February 2026" or "2026")
-- Do NOT include time references like "this week", "yesterday", "this month"
-- Focus on the TOPIC itself, not when it happened
-- Use general terms that will match older articles
+    prompt += `\n## CRITICAL: FREE TIER SEARCH LIMITATIONS
+The news API is on a FREE TIER that REJECTS queries containing time-sensitive words.
+Queries with these words return ZERO results. You MUST avoid them.
 
-Good query examples: "AI regulations policy", "artificial intelligence laws", "tech regulation"
-Bad query examples: "latest AI news February 2026", "recent AI regulations", "AI news today"\n\n`;
+FORBIDDEN WORDS IN SEARCH QUERIES:
+- Time words: "latest", "recent", "new", "current", "updates", "breaking", "just", "now", "emerging"
+- Date words: "today", "yesterday", "this week", "this month", "2026", "2025", any specific dates
+- Historical: "historical", "past", "old", "previous"
+
+HOW TO WRITE GOOD QUERIES:
+- Focus ONLY on the topic/subject matter
+- Use names, places, events - not time references
+- Think: "What would I search in Wikipedia?" not "What's trending?"
+
+EXAMPLES:
+✓ GOOD: "Trump legal cases indictment"
+✓ GOOD: "Diddy federal investigation charges"
+✓ GOOD: "Tesla stock performance analysis"
+✗ BAD: "Trump legal cases updates" (contains "updates")
+✗ BAD: "latest Diddy news" (contains "latest")
+✗ BAD: "recent Tesla developments" (contains "recent")
+✗ BAD: "new evidence Trump 2026" (contains "new" and "2026")
+
+The user asked about "${request}" - extract the CORE TOPIC and search for that, not the time aspect.\n\n`;
   }
 
   if (forceComplete) {
