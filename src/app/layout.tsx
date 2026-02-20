@@ -13,8 +13,23 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Agentic News Reader",
-  description: "AI-powered news research assistant that searches, reads, and synthesizes news for you",
+  title: {
+    default: "Agentic News Reader",
+    template: "%s | Agentic News Reader",
+  },
+  description: "AI-powered research assistant that reads hundreds of news articles to answer your questions. Watch multiple agents search, read, and synthesize information in real-time.",
+  keywords: ["news", "AI", "research", "assistant", "news reader", "agentic", "LLM"],
+  authors: [{ name: "Agentic News Reader" }],
+  openGraph: {
+    title: "Agentic News Reader",
+    description: "AI-powered research assistant that reads hundreds of news articles to answer your questions.",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Agentic News Reader",
+    description: "AI-powered research assistant that reads hundreds of news articles to answer your questions.",
+  },
 };
 
 export default function RootLayout({
