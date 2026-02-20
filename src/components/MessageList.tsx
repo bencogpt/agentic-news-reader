@@ -150,30 +150,14 @@ function FinalResponse({ task }: { task: Task }) {
 
 function ThinkingIndicator() {
   return (
-    <div className="flex justify-start">
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-750 border border-blue-100 dark:border-gray-700 rounded-2xl px-5 py-4 shadow-sm">
-        <div className="flex items-center gap-4">
-          {/* Animated brain/thinking icon */}
-          <div className="relative">
-            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center animate-pulse">
-              <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-              </svg>
-            </div>
-            {/* Ripple effect */}
-            <div className="absolute inset-0 rounded-full bg-blue-400 animate-ping opacity-20" />
-          </div>
-
-          <div className="flex flex-col gap-1">
-            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">Analyzing your request</span>
-            <div className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-[pulse_1s_ease-in-out_infinite]" />
-              <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-[pulse_1s_ease-in-out_0.2s_infinite]" />
-              <span className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-[pulse_1s_ease-in-out_0.4s_infinite]" />
-              <span className="text-xs text-gray-400 dark:text-gray-500 ml-1">preparing research...</span>
-            </div>
-          </div>
-        </div>
+    <div className="flex justify-start pl-2">
+      <div className="relative w-8 h-8">
+        {/* Outer ring */}
+        <div className="absolute inset-0 rounded-full border-2 border-blue-200 dark:border-blue-900" />
+        {/* Spinning arc */}
+        <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-blue-500 animate-spin" />
+        {/* Center dot */}
+        <div className="absolute inset-2 rounded-full bg-blue-500 animate-pulse" />
       </div>
     </div>
   );
