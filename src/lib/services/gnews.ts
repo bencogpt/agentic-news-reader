@@ -71,7 +71,6 @@ export async function searchGNews(params: SearchParams): Promise<GNewsResult> {
 
   // Create a display URL without the API key (after all params are set)
   const displayUrl = new URL(url.toString());
-  displayUrl.searchParams.set('apikey', 'YOUR_API_KEY');
 
   console.log(`[GNews] Request URL: ${displayUrl.toString()}`);
 
