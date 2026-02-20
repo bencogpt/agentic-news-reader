@@ -48,6 +48,7 @@ export async function searchGNews(params: SearchParams): Promise<GNewsResult> {
   const url = new URL(GNEWS_API_BASE_URL);
   url.searchParams.set('q', params.query);
   url.searchParams.set('lang', 'en');
+  url.searchParams.set('country', 'us');
   url.searchParams.set('max', String(params.pageSize || 10));
   url.searchParams.set('apikey', apiKey);
 
