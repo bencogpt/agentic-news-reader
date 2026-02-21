@@ -3,6 +3,7 @@ import { searchNews as searchNewsAPI } from './newsapi';
 import { searchGNews } from './gnews';
 import { searchNewsData } from './newsdata';
 import { searchCurrents } from './currents';
+import { searchMediastack } from './mediastack';
 
 export type NewsProvider = 'gnews' | 'newsapi' | 'newsdata' | 'guardian' | 'currents' | 'mediastack';
 
@@ -81,8 +82,16 @@ export async function searchNews(params: SearchParams): Promise<NewsSearchResult
     }
 
     case 'mediastack': {
-      // TODO: Implement Mediastack API
-      throw new Error('Mediastack API is not yet implemented.');
+      if (!process.env.MEDIASTACK_API_KEY) {
+        throw new Error('MEDIASTACK_API_KEY is not configured. Get a free key at https://mediastack.com/');
+      }
+      console.log('[News] Using Mediastack');
+      const result = await searchMediastack(params);
+      return {
+        articles: result.articles,
+        requestUrl: result.requestUrl,
+        provider: 'mediastack',
+      };
     }
 
     case 'gnews':
