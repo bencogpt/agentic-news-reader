@@ -225,7 +225,10 @@ export function ChatInput({ onSend, isLoading, placeholder }: ChatInputProps) {
                 <option value={1}>1 (fast)</option>
                 <option value={3}>3</option>
                 <option value={5}>5</option>
-                <option value={10}>10 (thorough)</option>
+                <option value={10}>10</option>
+                <option value={50}>50 (thorough)</option>
+                <option value={100}>100</option>
+                <option value={9999}>Unlimited</option>
               </select>
             </div>
             <p className="text-xs text-gray-500 dark:text-gray-400">
