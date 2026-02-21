@@ -499,24 +499,63 @@ INSTRUCTIONS FOR RETRY:
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error('[Analyst] Error:', errorMessage);
 
     await emitEvent(taskId, 'ANALYST', 'ERROR', {
       error: 'Analyst processing failed',
       details: errorMessage,
     });
 
-    // On first iteration error, try a simple search
-    if (iterationCount === 0) {
+    // Always try to recover with a search or complete with what we have
+    if (iterationCount === 0 || !summary) {
+      // No data yet - try a simple search
       const fallbackQuery = buildFallbackQuery(request, slots);
+      const fallbackProvider = activeProviders[0] || 'newsdata';
+
+      await emitEvent(taskId, 'ANALYST', 'ANALYST_DECISION', {
+        decision: 'SEARCH',
+        reason: 'Recovering from error - trying simple search',
+        query: fallbackQuery,
+        provider: fallbackProvider,
+      });
+
+      await emitEvent(taskId, 'ANALYST', 'SEARCH_QUERY_CREATED', {
+        query: fallbackQuery,
+        provider: fallbackProvider,
+      });
+
       return {
         type: 'SEARCH',
         query: fallbackQuery,
-        provider: activeProviders[0],
-        reason: 'Initial search based on request',
+        provider: fallbackProvider,
+        reason: 'Recovering from error - trying simple search',
+      };
+    } else {
+      // We have some data - complete with what we have
+      const fallbackResponse = `Based on available research:\n\n${summary}\n\n*Note: Research ended early due to an error.*`;
+      const fallbackCitations: Citation[] = sources.slice(0, 10).map((s, idx) => ({
+        number: idx + 1,
+        title: s.title,
+        url: s.url,
+        source: s.source,
+      }));
+
+      await emitEvent(taskId, 'ANALYST', 'ANALYST_DECISION', {
+        decision: 'COMPLETE',
+        reason: 'Completing with available information after error',
+      });
+
+      await emitEvent(taskId, 'ANALYST', 'RESPONSE_FINALIZED', {
+        response: fallbackResponse,
+        citations: fallbackCitations,
+      });
+
+      return {
+        type: 'COMPLETE',
+        response: fallbackResponse,
+        citations: fallbackCitations,
       };
     }
-
-    throw error;
   }
 }
 

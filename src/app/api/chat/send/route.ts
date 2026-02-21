@@ -122,81 +122,110 @@ export async function POST(request: NextRequest) {
   }
 }
 
-async function triggerAnalyst(taskId: string, maxSearches: number = 1, enabledProviders: NewsProvider[] = ALL_PROVIDERS): Promise<void> {
-  const task = await prisma.task.findUnique({
-    where: { id: taskId },
-    include: {
-      iterations: {
-        orderBy: { createdAt: 'asc' },
-        select: {
-          query: true,
-          provider: true,
-          status: true,
-          resultsCount: true,
-          error: true,
+async function triggerAnalyst(taskId: string, maxSearches: number = 1, enabledProviders: NewsProvider[] = ALL_PROVIDERS, depth: number = 0): Promise<void> {
+  // Prevent infinite recursion
+  const MAX_DEPTH = 10;
+  if (depth >= MAX_DEPTH) {
+    console.error(`[triggerAnalyst] Max recursion depth (${MAX_DEPTH}) reached for task ${taskId}`);
+    return;
+  }
+
+  try {
+    const task = await prisma.task.findUnique({
+      where: { id: taskId },
+      include: {
+        iterations: {
+          orderBy: { createdAt: 'asc' },
+          select: {
+            query: true,
+            provider: true,
+            status: true,
+            resultsCount: true,
+            error: true,
+          },
         },
       },
-    },
-  });
-
-  if (!task) return;
-
-  const slots = (task.context as IntentSlots) || {};
-  const sources = (task.sources as Array<{ title: string; url: string; source: string }>) || [];
-
-  // Build iteration history for the analyst
-  const iterationHistory = task.iterations.map((iter: {
-    query: string;
-    provider: string;
-    status: string;
-    resultsCount: number | null;
-    error: string | null;
-  }) => ({
-    query: iter.query,
-    provider: iter.provider,
-    status: iter.status,
-    resultsCount: iter.resultsCount,
-    error: iter.error,
-  }));
-
-  const decision = await runAnalyst({
-    taskId: task.id,
-    request: task.currentRequest || '',
-    slots,
-    notes: task.notes,
-    summary: task.summary,
-    sources,
-    iterationCount: task.iterationCount,
-    maxSearches,
-    iterationHistory,
-    enabledProviders,
-  });
-
-  await processAnalystDecision(taskId, decision);
-
-  // If analyst decided to search, the summarizer will be triggered by the cron
-  // or we can trigger it here for faster response
-  if (decision.type === 'SEARCH') {
-    // Get the latest pending iteration
-    const pendingIteration = await prisma.searchIteration.findFirst({
-      where: { taskId, status: 'PENDING' },
-      orderBy: { createdAt: 'desc' },
     });
 
-    if (pendingIteration) {
-      // Import and run summarizer
-      const { runSummarizer } = await import('@/lib/agents/summarizer');
-      await runSummarizer(pendingIteration.id);
+    if (!task) return;
 
-      // After summarizer completes (success or failure), check if we need another analyst pass
-      const updatedTask = await prisma.task.findUnique({
-        where: { id: taskId },
+    // Don't process if task is already completed or failed
+    if (task.status === 'COMPLETED' || task.status === 'FAILED') {
+      console.log(`[triggerAnalyst] Task ${taskId} already ${task.status}, skipping`);
+      return;
+    }
+
+    const slots = (task.context as IntentSlots) || {};
+    const sources = (task.sources as Array<{ title: string; url: string; source: string }>) || [];
+
+    // Build iteration history for the analyst
+    const iterationHistory = task.iterations.map((iter: {
+      query: string;
+      provider: string;
+      status: string;
+      resultsCount: number | null;
+      error: string | null;
+    }) => ({
+      query: iter.query,
+      provider: iter.provider,
+      status: iter.status,
+      resultsCount: iter.resultsCount,
+      error: iter.error,
+    }));
+
+    const decision = await runAnalyst({
+      taskId: task.id,
+      request: task.currentRequest || '',
+      slots,
+      notes: task.notes,
+      summary: task.summary,
+      sources,
+      iterationCount: task.iterationCount,
+      maxSearches,
+      iterationHistory,
+      enabledProviders,
+    });
+
+    await processAnalystDecision(taskId, decision);
+
+    // If analyst decided to search, the summarizer will be triggered by the cron
+    // or we can trigger it here for faster response
+    if (decision.type === 'SEARCH') {
+      // Get the latest pending iteration
+      const pendingIteration = await prisma.searchIteration.findFirst({
+        where: { taskId, status: 'PENDING' },
+        orderBy: { createdAt: 'desc' },
       });
 
-      if (updatedTask && updatedTask.status === 'WAITING_ANALYST') {
-        // Analyst will see the error and can choose a different provider
-        await triggerAnalyst(taskId, maxSearches, enabledProviders);
+      if (pendingIteration) {
+        // Import and run summarizer
+        const { runSummarizer } = await import('@/lib/agents/summarizer');
+        await runSummarizer(pendingIteration.id);
+
+        // After summarizer completes (success or failure), check if we need another analyst pass
+        const updatedTask = await prisma.task.findUnique({
+          where: { id: taskId },
+        });
+
+        if (updatedTask && updatedTask.status === 'WAITING_ANALYST') {
+          // Analyst will see the error and can choose a different provider
+          await triggerAnalyst(taskId, maxSearches, enabledProviders, depth + 1);
+        }
       }
+    }
+  } catch (error) {
+    console.error(`[triggerAnalyst] Error for task ${taskId}:`, error);
+    // Try to mark the task as failed so the UI shows something
+    try {
+      await prisma.task.update({
+        where: { id: taskId },
+        data: {
+          status: 'FAILED',
+          response: `Research failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        },
+      });
+    } catch {
+      // Ignore update errors
     }
   }
 }
