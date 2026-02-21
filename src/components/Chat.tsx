@@ -5,6 +5,30 @@ import { MessageList } from './MessageList';
 import { ResearchProgress } from './ResearchProgress';
 import { ChatInput } from './ChatInput';
 
+type NewsProvider = 'gnews' | 'newsapi' | 'newsdata' | 'guardian' | 'currents' | 'mediastack';
+const ALL_PROVIDERS: NewsProvider[] = ['newsdata', 'currents', 'gnews', 'guardian', 'mediastack'];
+
+// Read settings from localStorage (same as ChatInput)
+function getStoredSettings() {
+  if (typeof window === 'undefined') {
+    return { maxSearches: 1, debugMode: false, enabledProviders: ALL_PROVIDERS };
+  }
+  try {
+    const saved = localStorage.getItem('newsReaderSettings');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      return {
+        maxSearches: parsed.maxSearches || 1,
+        debugMode: parsed.debugMode || false,
+        enabledProviders: parsed.enabledProviders || ALL_PROVIDERS,
+      };
+    }
+  } catch {
+    // Ignore
+  }
+  return { maxSearches: 1, debugMode: false, enabledProviders: ALL_PROVIDERS };
+}
+
 interface Message {
   id: string;
   role: 'user' | 'assistant' | 'system';
@@ -42,6 +66,7 @@ export function Chat() {
   const [error, setError] = useState<string | null>(null);
   const [isResearchOpen, setIsResearchOpen] = useState(true);
   const [debugMode, setDebugModeState] = useState(false);
+  const [showSettings, setShowSettings] = useState(true);
   const eventSourceRef = useRef<EventSource | null>(null);
   const lastEventTimestampRef = useRef<string | null>(null);
 
@@ -105,10 +130,17 @@ export function Chat() {
     }
   };
 
-  const sendMessage = useCallback(async (text: string, maxSearches: number = 1, debugModeParam: boolean = false, enabledProviders: string[] = ['newsdata', 'currents', 'gnews', 'guardian', 'mediastack']) => {
+  const sendMessage = useCallback(async (text: string, maxSearches?: number, debugModeParam?: boolean, enabledProviders?: string[]) => {
+    // Read settings from localStorage if not provided (for predefined messages)
+    const storedSettings = getStoredSettings();
+    const finalMaxSearches = maxSearches ?? storedSettings.maxSearches;
+    const finalDebugMode = debugModeParam ?? storedSettings.debugMode;
+    const finalEnabledProviders = enabledProviders ?? storedSettings.enabledProviders;
+
     setIsLoading(true);
     setError(null);
-    setDebugModeState(debugModeParam);
+    setDebugModeState(finalDebugMode);
+    setShowSettings(false); // Close settings when any message is sent
 
     // Optimistic update: Add user message immediately
     const tempUserMessageId = `user-${Date.now()}`;
@@ -129,8 +161,8 @@ export function Chat() {
         body: JSON.stringify({
           conversationId,
           message: text,
-          maxSearches,
-          enabledProviders,
+          maxSearches: finalMaxSearches,
+          enabledProviders: finalEnabledProviders,
         }),
       });
 
@@ -275,6 +307,8 @@ export function Chat() {
               ? "Ask about news..."
               : "Send a message..."
             }
+            showSettings={showSettings}
+            onShowSettingsChange={setShowSettings}
           />
         </div>
 

@@ -138,6 +138,19 @@ export async function runSummarizer(iterationId: string): Promise<void> {
     const allNotes: ArticleNotes[] = [];
     const successfulSources: Array<{ title: string; url: string; source: string }> = [];
 
+    // Timeout wrapper for article processing
+    const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, articleTitle: string): Promise<T | null> => {
+      return Promise.race([
+        promise,
+        new Promise<null>((resolve) => {
+          setTimeout(() => {
+            console.log(`[Summarizer] Timeout processing article "${articleTitle}" after ${timeoutMs}ms`);
+            resolve(null);
+          }, timeoutMs);
+        }),
+      ]);
+    };
+
     // Helper to process a single article
     const processArticle = async (article: ArticleMeta): Promise<{ notes: ArticleNotes; source: { title: string; url: string; source: string } } | null> => {
       try {
@@ -147,16 +160,21 @@ export async function runSummarizer(iterationId: string): Promise<void> {
           articleTitle: article.title,
         }, iterationId);
 
-        // Extract article content
-        const extracted = await extractArticle(article);
+        // Extract article content with timeout (15 seconds)
+        const extracted = await withTimeout(extractArticle(article), 15000, article.title);
 
         if (!extracted) {
-          console.log(`Skipping article "${article.title}" - could not extract content`);
+          console.log(`Skipping article "${article.title}" - could not extract content or timeout`);
           return null;
         }
 
-        // Generate notes from the article
-        const notes = await generateArticleNotes(article, extracted.content);
+        // Generate notes from the article with timeout (20 seconds)
+        const notes = await withTimeout(generateArticleNotes(article, extracted.content), 20000, article.title);
+
+        if (!notes) {
+          console.log(`Skipping article "${article.title}" - note generation timeout`);
+          return null;
+        }
 
         // Emit article reading done
         await emitEvent(task.id, 'SUMMARIZER', 'ARTICLE_READING_DONE', {
@@ -203,6 +221,13 @@ export async function runSummarizer(iterationId: string): Promise<void> {
 
     console.log(`[Summarizer] Processed ${successfulSources.length}/${articles.length} articles successfully`);
 
+    // Emit event showing all articles have been processed
+    await emitEvent(task.id, 'SUMMARIZER', 'ARTICLES_PROCESSED', {
+      totalFound: articles.length,
+      successfullyProcessed: successfulSources.length,
+      articles: successfulSources.map(s => s.title),
+    }, iterationId);
+
     // Combine notes with existing task notes
     const existingNotes = task.notes || '';
     const newNotesText = formatNotes(allNotes);
@@ -232,9 +257,11 @@ export async function runSummarizer(iterationId: string): Promise<void> {
       },
     });
 
-    // Emit summary updated
+    // Emit summary updated with list of articles used
     await emitEvent(task.id, 'SUMMARIZER', 'SUMMARY_UPDATED', {
       summary,
+      articlesUsed: successfulSources.map(s => s.title),
+      articleCount: successfulSources.length,
     }, iterationId);
 
     // Mark iteration as done

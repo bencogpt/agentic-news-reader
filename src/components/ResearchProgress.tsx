@@ -35,11 +35,20 @@ interface Phase {
   url?: string;
   source?: string;
   articles?: Array<{ title: string; url: string; source: string }>;
-  requestUrl?: string; // GNews API request URL for debugging
+  requestUrl?: string; // API request URL for debugging
   dateRange?: { from: string; to: string }; // Date range used for search
   notes?: Record<string, string[]>; // Notes extracted from article
   summary?: string; // Summary text
+  provider?: string; // News provider used for search
 }
+
+const PROVIDER_NAMES: Record<string, string> = {
+  newsdata: 'NewsData.io',
+  currents: 'Currents',
+  gnews: 'GNews',
+  guardian: 'The Guardian',
+  mediastack: 'Mediastack',
+};
 
 export function ResearchProgress({ task, events, debugMode = false }: ResearchProgressProps) {
   // Group events by phase
@@ -99,9 +108,14 @@ export function ResearchProgress({ task, events, debugMode = false }: ResearchPr
           break;
         }
 
-        case 'SEARCH_STARTED':
-          // No need to add details, keep it clean
+        case 'SEARCH_STARTED': {
+          // Capture the provider from SEARCH_STARTED event
+          const payload = event.payload as { provider?: string };
+          if (currentSearch && payload.provider) {
+            currentSearch.provider = payload.provider;
+          }
           break;
+        }
 
         case 'SEARCH_RESULTS': {
           const payload = event.payload as {
@@ -162,13 +176,30 @@ export function ResearchProgress({ task, events, debugMode = false }: ResearchPr
           break;
         }
 
+        case 'ARTICLES_PROCESSED': {
+          const payload = event.payload as { totalFound?: number; successfullyProcessed?: number; articles?: string[] };
+          result.push({
+            id: event.id,
+            type: 'analysis',
+            title: `Processed ${payload.successfullyProcessed || 0}/${payload.totalFound || 0} articles`,
+            details: ['All articles read, generating summary...'],
+            status: 'done',
+          });
+          break;
+        }
+
         case 'SUMMARY_UPDATED': {
-          const payload = event.payload as { summary?: string };
+          const payload = event.payload as { summary?: string; articlesUsed?: string[]; articleCount?: number };
+          const articleCount = payload.articleCount || payload.articlesUsed?.length || 0;
           result.push({
             id: event.id,
             type: 'analysis',
             title: 'Summary updated',
-            details: ['Synthesizing information from all sources'],
+            details: [
+              `Based on ${articleCount} article${articleCount !== 1 ? 's' : ''}`,
+              ...(payload.articlesUsed?.slice(0, 3).map(title => `• ${title.length > 50 ? title.substring(0, 50) + '...' : title}`) || []),
+              ...(payload.articlesUsed && payload.articlesUsed.length > 3 ? [`• ...and ${payload.articlesUsed.length - 3} more`] : []),
+            ],
             status: 'done',
             summary: payload.summary,
           });
@@ -368,13 +399,18 @@ function PhaseItem({ phase, debugMode = false }: { phase: Phase; debugMode?: boo
             )}
           </div>
           <span className="text-sm font-medium text-gray-900 dark:text-white truncate flex-1">{phase.title}</span>
+          {phase.provider && (
+            <span className="text-xs px-1.5 py-0.5 bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 rounded font-medium">
+              {PROVIDER_NAMES[phase.provider] || phase.provider}
+            </span>
+          )}
           {debugMode && phase.requestUrl && (
             <a
               href={phase.requestUrl}
               target="_blank"
               rel="noopener noreferrer"
               className="text-xs text-purple-500 hover:text-purple-600 hover:underline flex-shrink-0 flex items-center gap-1"
-              title="View GNews API request (Debug Mode)"
+              title={`View ${PROVIDER_NAMES[phase.provider || ''] || 'API'} request (Debug Mode)`}
             >
               <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />

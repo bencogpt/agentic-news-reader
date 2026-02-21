@@ -16,6 +16,8 @@ interface ChatInputProps {
   onSend: (message: string, maxSearches: number, debugMode: boolean, enabledProviders: NewsProvider[]) => void;
   isLoading: boolean;
   placeholder?: string;
+  showSettings: boolean;
+  onShowSettingsChange: (show: boolean) => void;
 }
 
 // Load settings from localStorage
@@ -47,12 +49,11 @@ function loadSettings() {
   };
 }
 
-export function ChatInput({ onSend, isLoading, placeholder }: ChatInputProps) {
+export function ChatInput({ onSend, isLoading, placeholder, showSettings, onShowSettingsChange }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const [maxSearches, setMaxSearches] = useState(1);
   const [debugMode, setDebugMode] = useState(false);
   const [enabledProviders, setEnabledProviders] = useState<NewsProvider[]>(ALL_PROVIDERS.map(p => p.id));
-  const [showSettings, setShowSettings] = useState(true);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -93,7 +94,6 @@ export function ChatInput({ onSend, isLoading, placeholder }: ChatInputProps) {
     if (message.trim() && !isLoading && enabledProviders.length > 0) {
       onSend(message.trim(), maxSearches, debugMode, enabledProviders);
       setMessage('');
-      setShowSettings(false); // Close settings after first message
     }
   };
 
@@ -132,7 +132,7 @@ export function ChatInput({ onSend, isLoading, placeholder }: ChatInputProps) {
           {/* Settings button */}
           <button
             type="button"
-            onClick={() => setShowSettings(!showSettings)}
+            onClick={() => onShowSettingsChange(!showSettings)}
             className={`flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-lg transition-colors ${
               showSettings ? 'bg-purple-100 dark:bg-purple-900/30 text-purple-600' : 'text-gray-400 hover:text-gray-600 dark:hover:text-gray-300'
             }`}
