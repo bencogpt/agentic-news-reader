@@ -416,9 +416,14 @@ INSTRUCTIONS FOR RETRY:
           throw new Error('COMPLETE decision requires a response');
         }
 
+        // Ensure response is a string (LLM might return object/array)
+        const responseText = typeof parsed.response === 'string'
+          ? parsed.response
+          : JSON.stringify(parsed.response);
+
         // CRITICAL: Citations come directly from the real sources array - NO LLM generation
         // Extract which citation numbers [1], [2], etc. are used in the response
-        const citationMatches = parsed.response.match(/\[(\d+)\]/g) || [];
+        const citationMatches = responseText.match(/\[(\d+)\]/g) || [];
         const usedNumbers = new Set(citationMatches.map(m => parseInt(m.replace(/[\[\]]/g, ''))));
 
         // Build citations from REAL sources only
@@ -458,7 +463,7 @@ INSTRUCTIONS FOR RETRY:
 
         const completeDecision: AnalystDecision = {
           type: 'COMPLETE',
-          response: parsed.response,
+          response: responseText,
           citations,
         };
 
@@ -468,7 +473,7 @@ INSTRUCTIONS FOR RETRY:
         });
 
         await emitEvent(taskId, 'ANALYST', 'RESPONSE_FINALIZED', {
-          response: parsed.response,
+          response: responseText,
           citations,
         });
 
