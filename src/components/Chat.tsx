@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { collection, onSnapshot, query, orderBy, type Unsubscribe } from 'firebase/firestore';
+import { getClientFirestore } from '@/lib/firebase-client';
 import { MessageList } from './MessageList';
 import { ResearchProgress } from './ResearchProgress';
 import { ChatInput } from './ChatInput';
@@ -58,7 +60,7 @@ interface AgentEvent {
   payload: Record<string, unknown>;
 }
 
-export function Chat() {
+export function Chat({ initialQuery }: { initialQuery?: string } = {}) {
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -68,55 +70,52 @@ export function Chat() {
   const [isResearchOpen, setIsResearchOpen] = useState(true);
   const [debugMode, setDebugModeState] = useState(false);
   const [showSettings, setShowSettings] = useState(true);
-  const eventSourceRef = useRef<EventSource | null>(null);
-  const lastEventTimestampRef = useRef<string | null>(null);
+  const unsubscribeRef = useRef<Unsubscribe | null>(null);
 
-  // Set up SSE connection when we have a conversation
+  // Get the active/display task (derived before effects that depend on it)
+  const activeTask = tasks.find((t) => ['ACTIVE', 'RESEARCHING', 'WAITING_ANALYST'].includes(t.status));
+  const completedTask = tasks.find((t) => t.status === 'COMPLETED');
+  const displayTask = activeTask || completedTask;
+
+  // Subscribe to agentEvents subcollection via Firestore onSnapshot
   useEffect(() => {
-    if (!conversationId) return;
+    unsubscribeRef.current?.();
+    if (!displayTask?.id) return;
 
-    const setupEventSource = () => {
-      const url = new URL('/api/stream', window.location.origin);
-      url.searchParams.set('conversationId', conversationId);
-      if (lastEventTimestampRef.current) {
-        url.searchParams.set('lastEventId', lastEventTimestampRef.current);
-      }
+    const clientDb = getClientFirestore();
+    const q = query(
+      collection(clientDb, 'tasks', displayTask.id, 'agentEvents'),
+      orderBy('createdAt', 'asc')
+    );
 
-      const eventSource = new EventSource(url.toString());
-      eventSourceRef.current = eventSource;
-
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data) as AgentEvent;
-          setEvents((prev) => {
-            // Avoid duplicates
-            if (prev.some((e) => e.id === data.id)) return prev;
-            return [...prev, data];
-          });
-          lastEventTimestampRef.current = data.createdAt;
-
-          // Refresh conversation data when important events happen
-          if (['RESPONSE_FINALIZED', 'TASK_CREATED', 'TASK_UPDATED'].includes(data.type)) {
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === 'added') {
+          const data = change.doc.data();
+          const event: AgentEvent = {
+            id: change.doc.id,
+            taskId: data.taskId,
+            iterationId: data.iterationId ?? undefined,
+            createdAt: data.createdAt?.toDate?.()?.toISOString() ?? new Date().toISOString(),
+            agent: data.agent,
+            type: data.type,
+            payload: (data.payload ?? {}) as Record<string, unknown>,
+          };
+          setEvents((prev) => prev.some((e) => e.id === event.id) ? prev : [...prev, event]);
+          if (['RESPONSE_FINALIZED', 'TASK_CREATED', 'TASK_UPDATED'].includes(event.type) && conversationId) {
             refreshConversation(conversationId);
           }
-        } catch {
-          // Ignore parsing errors (keepalive messages)
         }
-      };
+      });
+    });
 
-      eventSource.onerror = () => {
-        eventSource.close();
-        // Reconnect after a delay
-        setTimeout(setupEventSource, 3000);
-      };
-    };
-
-    setupEventSource();
-
+    unsubscribeRef.current = unsubscribe;
     return () => {
-      eventSourceRef.current?.close();
+      unsubscribe();
+      unsubscribeRef.current = null;
     };
-  }, [conversationId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [displayTask?.id, conversationId]);
 
   const refreshConversation = async (convId: string) => {
     try {
@@ -132,7 +131,6 @@ export function Chat() {
   };
 
   const sendMessage = useCallback(async (text: string, maxSearches?: number, debugModeParam?: boolean, enabledProviders?: string[], resultsPerSearch?: number) => {
-    // Read settings from localStorage if not provided (for predefined messages)
     const storedSettings = getStoredSettings();
     const finalMaxSearches = maxSearches ?? storedSettings.maxSearches;
     const finalDebugMode = debugModeParam ?? storedSettings.debugMode;
@@ -142,7 +140,7 @@ export function Chat() {
     setIsLoading(true);
     setError(null);
     setDebugModeState(finalDebugMode);
-    setShowSettings(false); // Close settings when any message is sent
+    setShowSettings(false);
 
     // Optimistic update: Add user message immediately
     const tempUserMessageId = `user-${Date.now()}`;
@@ -176,12 +174,10 @@ export function Chat() {
 
       const data = await response.json();
 
-      // Update conversation ID if this is a new conversation
       if (!conversationId) {
         setConversationId(data.conversationId);
       }
 
-      // Add assistant response
       setMessages((prev) => [
         ...prev,
         {
@@ -193,32 +189,33 @@ export function Chat() {
         },
       ]);
 
-      // Refresh to get full data
       if (data.conversationId) {
         await refreshConversation(data.conversationId);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
-      // Remove the optimistic message on error
       setMessages((prev) => prev.filter((m) => m.id !== tempUserMessageId));
     } finally {
       setIsLoading(false);
     }
   }, [conversationId]);
 
+  // Auto-send initialQuery on mount
+  useEffect(() => {
+    if (initialQuery && messages.length === 0) {
+      sendMessage(initialQuery);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const startNewConversation = useCallback(() => {
+    unsubscribeRef.current?.();
+    unsubscribeRef.current = null;
     setConversationId(null);
     setMessages([]);
     setTasks([]);
     setEvents([]);
-    lastEventTimestampRef.current = null;
-    eventSourceRef.current?.close();
   }, []);
-
-  // Get the active task
-  const activeTask = tasks.find((t) => ['ACTIVE', 'RESEARCHING', 'WAITING_ANALYST'].includes(t.status));
-  const completedTask = tasks.find((t) => t.status === 'COMPLETED');
-  const displayTask = activeTask || completedTask;
 
   // Filter events for the display task
   const taskEvents = displayTask

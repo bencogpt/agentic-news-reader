@@ -157,3 +157,32 @@ export interface SSEEvent {
   type: EventType;
   payload: Record<string, unknown>;
 }
+
+// Timeline entry for a Case
+export interface TimelineEntry {
+  id: string;
+  date: string;       // YYYY-MM-DD of the fact/event
+  fact: string;       // one-sentence fact
+  sources: Citation[];
+  addedAt: string;    // ISO timestamp
+}
+
+// Pinned research case (per-user)
+export interface Case {
+  id: string;
+  userId: string;
+  title: string;
+  query: string;
+  slots: IntentSlots;
+  status: 'active' | 'archived';
+  createdAt: string;
+  updatedAt: string;
+  lastRefreshedAt: string;
+  nextRefreshAt: string;
+  refreshIntervalDays: number;
+  summary: string;
+  timeline: TimelineEntry[];
+  knownArticleUrls: string[];
+  sources: Citation[];
+  originalTaskId: string;
+}

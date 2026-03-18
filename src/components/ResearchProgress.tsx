@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { useAuth } from './AuthProvider';
 
 interface AgentEvent {
   id: string;
@@ -51,6 +52,32 @@ const PROVIDER_NAMES: Record<string, string> = {
 };
 
 export function ResearchProgress({ task, events, debugMode = false }: ResearchProgressProps) {
+  const { user } = useAuth();
+  const [pinState, setPinState] = useState<'idle' | 'pinning' | 'pinned' | 'error'>('idle');
+  const [pinnedCaseId, setPinnedCaseId] = useState<string | null>(null);
+
+  const handlePin = async () => {
+    if (!user || !task.id) return;
+    setPinState('pinning');
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch('/api/cases', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ taskId: task.id }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      setPinnedCaseId(data.id);
+      setPinState('pinned');
+    } catch {
+      setPinState('error');
+    }
+  };
+
   // Group events by phase
   const phases = useMemo(() => {
     const result: Phase[] = [];
@@ -266,7 +293,7 @@ export function ResearchProgress({ task, events, debugMode = false }: ResearchPr
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
         )}
-        <div>
+        <div className="flex-1">
           <span className="font-medium text-gray-900 dark:text-white block">
             {isActive ? 'Researching...' : task.status === 'COMPLETED' ? 'Complete' : task.status === 'FAILED' ? 'Failed' : 'Research'}
           </span>
@@ -274,6 +301,33 @@ export function ResearchProgress({ task, events, debugMode = false }: ResearchPr
             {task.iterationCount} iteration{task.iterationCount !== 1 ? 's' : ''} · {phases.filter(p => p.type === 'reading').length} articles
           </span>
         </div>
+
+        {/* Pin as Case button — shown when completed and user is signed in */}
+        {task.status === 'COMPLETED' && user && (
+          <div className="flex-shrink-0">
+            {pinState === 'pinned' && pinnedCaseId ? (
+              <a
+                href={`/cases/${pinnedCaseId}`}
+                className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:underline"
+              >
+                ✓ View Case
+              </a>
+            ) : (
+              <button
+                onClick={handlePin}
+                disabled={pinState === 'pinning'}
+                className="flex items-center gap-1 text-xs px-2.5 py-1.5 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 disabled:opacity-50 transition-colors"
+              >
+                {pinState === 'pinning' ? (
+                  <div className="w-3 h-3 border border-blue-600 border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  '📌'
+                )}
+                {pinState === 'error' ? 'Error' : 'Pin as Case'}
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Progress phases - scrollable */}

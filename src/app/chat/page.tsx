@@ -1,5 +1,10 @@
 import { Chat } from '@/components/Chat';
 
-export default function ChatPage() {
-  return <Chat />;
+interface ChatPageProps {
+  searchParams: Promise<{ q?: string }>;
+}
+
+export default async function ChatPage({ searchParams }: ChatPageProps) {
+  const { q } = await searchParams;
+  return <Chat initialQuery={q} />;
 }
