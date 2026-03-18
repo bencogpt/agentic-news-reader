@@ -29,6 +29,7 @@ function getDb(): Firestore {
   }
 
   const firestore = app.firestore();
+  firestore.settings({ ignoreUndefinedProperties: true });
   globalForFirebase._firebaseAdminDb = firestore;
   return firestore;
 }

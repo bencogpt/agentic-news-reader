@@ -110,9 +110,12 @@ Write one short, focused search query to find NEW developments on this topic. Re
   const query = focusedQuery.trim().replace(/^["']|["']$/g, '');
 
   // 3. Search for new articles
-  // lastRefreshedAt is stored as ISO string in our Case type
-  const fromDate = caseData.lastRefreshedAt
-    ? caseData.lastRefreshedAt.split('T')[0]
+  // lastRefreshedAt may be a Firestore Timestamp or ISO string
+  const rawRefreshedAt = rawData.lastRefreshedAt;
+  const fromDate = rawRefreshedAt
+    ? (typeof rawRefreshedAt.toDate === 'function'
+        ? rawRefreshedAt.toDate().toISOString().split('T')[0]
+        : String(rawRefreshedAt).split('T')[0])
     : undefined;
 
   const searchResult = await searchNews({
@@ -128,7 +131,7 @@ Write one short, focused search query to find NEW developments on this topic. Re
   const newArticles = searchResult.articles.filter(a => !knownUrls.has(a.url));
 
   const now = new Date();
-  const nextRefreshAt = new Date(now.getTime() + (caseData.refreshIntervalDays ?? 1) * 24 * 60 * 60 * 1000);
+  const nextRefreshAt = new Date(now.getTime() + (caseData.refreshIntervalHours ?? 1) * 60 * 60 * 1000);
 
   // 5. No new articles — just update timestamps
   if (newArticles.length === 0) {

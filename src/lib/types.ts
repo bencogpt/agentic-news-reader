@@ -179,7 +179,7 @@ export interface Case {
   updatedAt: string;
   lastRefreshedAt: string;
   nextRefreshAt: string;
-  refreshIntervalDays: number;
+  refreshIntervalHours: number;
   summary: string;
   timeline: TimelineEntry[];
   knownArticleUrls: string[];

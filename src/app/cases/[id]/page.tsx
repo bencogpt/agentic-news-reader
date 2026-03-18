@@ -18,7 +18,7 @@ function CaseDetailContent({ caseId }: { caseId: string }) {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [refreshMessage, setRefreshMessage] = useState<string | null>(null);
-  const [intervalDays, setIntervalDays] = useState(1);
+  const [intervalHours, setIntervalHours] = useState(1);
 
   const fetchCase = async () => {
     if (!user) return;
@@ -30,7 +30,7 @@ function CaseDetailContent({ caseId }: { caseId: string }) {
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
       setCaseData(data);
-      setIntervalDays(data.refreshIntervalDays ?? 1);
+      setIntervalHours(data.refreshIntervalHours ?? 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load case');
     } finally {
@@ -63,9 +63,9 @@ function CaseDetailContent({ caseId }: { caseId: string }) {
     }
   };
 
-  const handleIntervalChange = async (days: number) => {
+  const handleIntervalChange = async (hours: number) => {
     if (!user) return;
-    setIntervalDays(days);
+    setIntervalHours(hours);
     try {
       const token = await user.getIdToken();
       await fetch(`/api/cases/${caseId}`, {
@@ -74,7 +74,7 @@ function CaseDetailContent({ caseId }: { caseId: string }) {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ refreshIntervalDays: days }),
+        body: JSON.stringify({ refreshIntervalHours: hours }),
       });
     } catch (err) {
       console.error('Failed to update interval:', err);
@@ -187,13 +187,16 @@ function CaseDetailContent({ caseId }: { caseId: string }) {
         <div className="flex items-center gap-2">
           <label className="text-sm text-gray-600 dark:text-gray-400">Auto-refresh every</label>
           <select
-            value={intervalDays}
+            value={intervalHours}
             onChange={(e) => handleIntervalChange(Number(e.target.value))}
             className="text-sm border border-gray-300 dark:border-gray-600 rounded-lg px-2 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
           >
-            <option value={1}>1 day</option>
-            <option value={3}>3 days</option>
-            <option value={7}>7 days</option>
+            <option value={1}>1 hour</option>
+            <option value={6}>6 hours</option>
+            <option value={12}>12 hours</option>
+            <option value={24}>1 day</option>
+            <option value={72}>3 days</option>
+            <option value={168}>7 days</option>
           </select>
         </div>
 

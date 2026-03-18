@@ -70,7 +70,7 @@ export async function PATCH(request: NextRequest, { params }: RouteParams) {
 
     const body = await request.json();
     const allowed: Record<string, unknown> = {};
-    if (typeof body.refreshIntervalDays === 'number') allowed.refreshIntervalDays = body.refreshIntervalDays;
+    if (typeof body.refreshIntervalHours === 'number') allowed.refreshIntervalHours = body.refreshIntervalHours;
     if (body.status === 'active' || body.status === 'archived') allowed.status = body.status;
 
     await db.collection('cases').doc(id).update({ ...allowed, updatedAt: FieldValue.serverTimestamp() });
