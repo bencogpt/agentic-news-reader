@@ -1,4 +1,5 @@
-import { prisma } from '../prisma';
+import { db } from '../firebase-admin';
+import { FieldValue } from 'firebase-admin/firestore';
 import { generateCompletion, parseJsonResponse } from '../services/llm';
 import { emitEvent } from '../services/events';
 import { IntentSlots, UFAAction } from '../types';
@@ -98,12 +99,10 @@ export async function runUFA(
   response: string;
   taskId?: string;
 }> {
-  // Build conversation context for LLM
   const messages: Message[] = [
     { role: 'system', content: UFA_SYSTEM_PROMPT },
   ];
 
-  // Add conversation history
   for (const msg of conversationHistory.slice(-10)) {
     messages.push({
       role: msg.role === 'user' ? 'user' : 'assistant',
@@ -111,23 +110,25 @@ export async function runUFA(
     });
   }
 
-  // Add current message
   messages.push({ role: 'user', content: userMessage });
 
-  // Get active task for context
-  const conversation = await prisma.conversation.findUnique({
-    where: { id: conversationId },
-    include: {
-      tasks: {
-        orderBy: { createdAt: 'desc' },
-        take: 1,
-      },
-    },
-  });
+  // Get conversation and most recent task
+  const [convDoc, tasksSnapshot] = await Promise.all([
+    db.collection('conversations').doc(conversationId).get(),
+    db.collection('tasks')
+      .where('conversationId', '==', conversationId)
+      .orderBy('createdAt', 'desc')
+      .limit(1)
+      .get(),
+  ]);
 
-  const activeTask = conversation?.tasks[0];
+  const activeTask = tasksSnapshot.empty ? null : { id: tasksSnapshot.docs[0].id, ...tasksSnapshot.docs[0].data() } as {
+    id: string;
+    title?: string;
+    status: string;
+    currentRequest?: string;
+  };
 
-  // Add context about active task if exists
   if (activeTask) {
     messages.push({
       role: 'system',
@@ -139,7 +140,9 @@ If the user is modifying this request, use UPDATE_TASK with this taskId.`,
     });
   }
 
-  // Generate response
+  // Suppress unused variable warning
+  void convDoc;
+
   const responseText = await generateCompletion({
     systemPrompt: messages.find((m) => m.role === 'system')!.content,
     userPrompt: messages
@@ -152,7 +155,6 @@ If the user is modifying this request, use UPDATE_TASK with this taskId.`,
 
   const parsed = await parseJsonResponse<UFAResponse>(responseText);
 
-  // Handle different actions
   switch (parsed.action) {
     case 'CREATE_TASK': {
       const slots: IntentSlots = {
@@ -161,7 +163,6 @@ If the user is modifying this request, use UPDATE_TASK with this taskId.`,
         outputType: parsed.slots?.outputType as IntentSlots['outputType'],
       };
 
-      // Resolve time window if it's a relative expression
       if (!slots.timeWindow && parsed.slots?.timeWindow) {
         const resolved = resolveTimeWindow(
           `${parsed.slots.timeWindow.start} to ${parsed.slots.timeWindow.end}`
@@ -207,9 +208,9 @@ If the user is modifying this request, use UPDATE_TASK with this taskId.`,
 
     case 'SET_ACTIVE_TASK': {
       if (parsed.taskId) {
-        await prisma.conversation.update({
-          where: { id: conversationId },
-          data: { activeTaskId: parsed.taskId },
+        await db.collection('conversations').doc(conversationId).update({
+          activeTaskId: parsed.taskId,
+          updatedAt: FieldValue.serverTimestamp(),
         });
       }
       return {
@@ -242,36 +243,38 @@ async function createTask(
   title: string,
   userMessage: string
 ) {
-  const task = await prisma.task.create({
-    data: {
-      conversationId,
-      status: 'ACTIVE',
-      title,
-      currentRequest: userMessage,
-      context: slots as object,
-      lastUserMessageAt: new Date(),
-      requests: {
-        create: {
-          text: userMessage,
-        },
-      },
-    },
+  const taskData = {
+    conversationId,
+    status: 'ACTIVE',
+    title,
+    currentRequest: userMessage,
+    context: slots,
+    lastUserMessageAt: FieldValue.serverTimestamp(),
+    iterationCount: 0,
+    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  };
+
+  const taskRef = await db.collection('tasks').add(taskData);
+
+  await taskRef.collection('taskRequests').add({
+    taskId: taskRef.id,
+    text: userMessage,
+    createdAt: FieldValue.serverTimestamp(),
   });
 
-  // Update conversation active task
-  await prisma.conversation.update({
-    where: { id: conversationId },
-    data: { activeTaskId: task.id },
+  await db.collection('conversations').doc(conversationId).update({
+    activeTaskId: taskRef.id,
+    updatedAt: FieldValue.serverTimestamp(),
   });
 
-  // Emit event
-  await emitEvent(task.id, 'UFA', 'TASK_CREATED', {
+  await emitEvent(taskRef.id, 'UFA', 'TASK_CREATED', {
     title,
     request: userMessage,
     slots,
   });
 
-  return task;
+  return { id: taskRef.id };
 }
 
 async function updateTask(
@@ -279,34 +282,31 @@ async function updateTask(
   slots: Partial<IntentSlots>,
   userMessage: string
 ) {
-  const task = await prisma.task.findUnique({
-    where: { id: taskId },
-  });
+  const taskDoc = await db.collection('tasks').doc(taskId).get();
 
-  if (!task) {
+  if (!taskDoc.exists) {
     throw new Error(`Task ${taskId} not found`);
   }
 
-  // Merge slots with existing context
-  const existingContext = (task.context as IntentSlots) || {};
+  const existingContext = (taskDoc.data()?.context as IntentSlots) || {};
   const newContext = { ...existingContext, ...slots };
 
-  await prisma.task.update({
-    where: { id: taskId },
-    data: {
-      currentRequest: userMessage,
-      context: newContext as object,
-      lastUserMessageAt: new Date(),
-      status: 'ACTIVE', // Reset to ACTIVE for new processing
-      requests: {
-        create: {
-          text: userMessage,
-        },
-      },
-    },
+  const taskRef = db.collection('tasks').doc(taskId);
+
+  await taskRef.update({
+    currentRequest: userMessage,
+    context: newContext,
+    lastUserMessageAt: FieldValue.serverTimestamp(),
+    status: 'ACTIVE',
+    updatedAt: FieldValue.serverTimestamp(),
   });
 
-  // Emit event
+  await taskRef.collection('taskRequests').add({
+    taskId,
+    text: userMessage,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+
   await emitEvent(taskId, 'UFA', 'TASK_UPDATED', {
     changes: JSON.stringify(slots),
     newRequest: userMessage,
@@ -317,7 +317,6 @@ export function parseIntentFromMessage(message: string): Partial<IntentSlots> {
   const lower = message.toLowerCase();
   const slots: Partial<IntentSlots> = {};
 
-  // Time patterns
   if (lower.includes('yesterday')) {
     const yesterday = getYesterday();
     slots.timeWindow = { start: yesterday, end: yesterday };
@@ -332,7 +331,6 @@ export function parseIntentFromMessage(message: string): Partial<IntentSlots> {
     if (resolved) slots.timeWindow = resolved;
   }
 
-  // Output type patterns
   if (lower.includes('where was') || lower.includes('location')) {
     slots.outputType = 'location_tracking';
   } else if (lower.includes('what happened') || lower.includes('what\'s happening')) {

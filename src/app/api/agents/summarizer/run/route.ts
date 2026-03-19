@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/firebase-admin';
 import { runSummarizer } from '@/lib/agents/summarizer';
 
-export const maxDuration = 300; // 5 minutes max for article processing
-
 interface RunRequest {
+  taskId: string;
   iterationId: string;
 }
 
@@ -12,33 +11,33 @@ export async function POST(request: NextRequest) {
   try {
     const body: RunRequest = await request.json();
 
-    if (!body.iterationId) {
+    if (!body.taskId || !body.iterationId) {
       return NextResponse.json(
-        { error: 'iterationId is required' },
+        { error: 'taskId and iterationId are required' },
         { status: 400 }
       );
     }
 
-    const iteration = await prisma.searchIteration.findUnique({
-      where: { id: body.iterationId },
-    });
+    const iterationDoc = await db
+      .collection('tasks').doc(body.taskId)
+      .collection('searchIterations').doc(body.iterationId)
+      .get();
 
-    if (!iteration) {
+    if (!iterationDoc.exists) {
       return NextResponse.json(
         { error: 'Iteration not found' },
         { status: 404 }
       );
     }
 
-    // Only run if iteration is pending
-    if (iteration.status !== 'PENDING') {
+    if (iterationDoc.data()!.status !== 'PENDING') {
       return NextResponse.json({
-        message: `Iteration is in ${iteration.status} state, skipping`,
+        message: `Iteration is in ${iterationDoc.data()!.status} state, skipping`,
         skipped: true,
       });
     }
 
-    await runSummarizer(body.iterationId);
+    await runSummarizer(body.taskId, body.iterationId);
 
     return NextResponse.json({
       success: true,

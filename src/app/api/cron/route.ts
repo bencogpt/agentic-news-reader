@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/firebase-admin';
+import { FieldValue } from 'firebase-admin/firestore';
 import { runAnalyst, processAnalystDecision } from '@/lib/agents/analyst';
 import { runSummarizer } from '@/lib/agents/summarizer';
 import { IntentSlots } from '@/lib/types';
-
-export const maxDuration = 300; // 5 minutes max
 
 // Verify cron secret to prevent unauthorized access
 const CRON_SECRET = process.env.CRON_SECRET;
 
 export async function GET(request: NextRequest) {
-  // Verify authorization for cron jobs
   const authHeader = request.headers.get('authorization');
   if (CRON_SECRET && authHeader !== `Bearer ${CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
@@ -24,33 +22,46 @@ export async function GET(request: NextRequest) {
     };
 
     // 1. Process pending search iterations (summarizer)
-    const pendingIterations = await prisma.searchIteration.findMany({
-      where: { status: 'PENDING' },
-      orderBy: { createdAt: 'asc' },
-      take: 3, // Process a few at a time to stay within timeout
-    });
+    const pendingIterSnapshot = await db
+      .collectionGroup('searchIterations')
+      .where('status', '==', 'PENDING')
+      .orderBy('createdAt', 'asc')
+      .limit(3)
+      .get();
 
-    for (const iteration of pendingIterations) {
+    for (const iterDoc of pendingIterSnapshot.docs) {
+      const data = iterDoc.data();
+      const iterTaskId = data.taskId as string;
       try {
-        await runSummarizer(iteration.id);
+        await runSummarizer(iterTaskId, iterDoc.id);
         results.processedIterations++;
       } catch (error) {
-        const msg = `Error processing iteration ${iteration.id}: ${error instanceof Error ? error.message : String(error)}`;
+        const msg = `Error processing iteration ${iterDoc.id}: ${error instanceof Error ? error.message : String(error)}`;
         console.error(msg);
         results.errors.push(msg);
       }
     }
 
-    // 2. Process tasks waiting for analyst (including ACTIVE tasks that may have timed out)
-    const waitingTasks = await prisma.task.findMany({
-      where: {
-        status: { in: ['WAITING_ANALYST', 'ACTIVE'] }
-      },
-      orderBy: { updatedAt: 'asc' },
-      take: 3,
-    });
+    // 2. Process tasks waiting for analyst
+    const waitingSnapshot = await db
+      .collection('tasks')
+      .where('status', 'in', ['WAITING_ANALYST', 'ACTIVE'])
+      .orderBy('updatedAt', 'asc')
+      .limit(3)
+      .get();
 
-    for (const task of waitingTasks) {
+    for (const taskDoc of waitingSnapshot.docs) {
+      const task = { id: taskDoc.id, ...taskDoc.data() } as {
+        id: string;
+        status: string;
+        currentRequest?: string;
+        notes?: string;
+        summary?: string;
+        sources?: Array<{ title: string; url: string; source: string }>;
+        context?: IntentSlots;
+        iterationCount: number;
+      };
+
       try {
         const slots = (task.context as IntentSlots) || {};
         const sources = (task.sources as Array<{ title: string; url: string; source: string }>) || [];
@@ -59,8 +70,8 @@ export async function GET(request: NextRequest) {
           taskId: task.id,
           request: task.currentRequest || '',
           slots,
-          notes: task.notes,
-          summary: task.summary,
+          notes: task.notes ?? null,
+          summary: task.summary ?? null,
           sources,
           iterationCount: task.iterationCount,
         });
@@ -74,27 +85,26 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // 3. Handle stuck tasks (RESEARCHING status for too long)
-    const stuckTasks = await prisma.task.findMany({
-      where: {
-        status: 'RESEARCHING',
-        updatedAt: {
-          lt: new Date(Date.now() - 10 * 60 * 1000), // More than 10 minutes old
-        },
-      },
-    });
+    // 3. Handle stuck tasks (RESEARCHING for more than 10 minutes)
+    const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
+    const stuckSnapshot = await db
+      .collection('tasks')
+      .where('status', '==', 'RESEARCHING')
+      .where('updatedAt', '<', tenMinutesAgo)
+      .get();
 
-    for (const task of stuckTasks) {
-      // Check if there are any running iterations
-      const runningIterations = await prisma.searchIteration.count({
-        where: { taskId: task.id, status: 'RUNNING' },
-      });
+    for (const taskDoc of stuckSnapshot.docs) {
+      const runningSnapshot = await db
+        .collection('tasks').doc(taskDoc.id)
+        .collection('searchIterations')
+        .where('status', '==', 'RUNNING')
+        .limit(1)
+        .get();
 
-      if (runningIterations === 0) {
-        // Reset to WAITING_ANALYST so it can be picked up
-        await prisma.task.update({
-          where: { id: task.id },
-          data: { status: 'WAITING_ANALYST' },
+      if (runningSnapshot.empty) {
+        await db.collection('tasks').doc(taskDoc.id).update({
+          status: 'WAITING_ANALYST',
+          updatedAt: FieldValue.serverTimestamp(),
         });
       }
     }

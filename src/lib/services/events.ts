@@ -1,5 +1,5 @@
-import { Prisma } from '@prisma/client';
-import { prisma } from '../prisma';
+import { db } from '../firebase-admin';
+import { FieldValue } from 'firebase-admin/firestore';
 import { AgentType, EventType } from '../types';
 
 export async function emitEvent(
@@ -9,19 +9,23 @@ export async function emitEvent(
   payload?: Record<string, unknown>,
   iterationId?: string
 ): Promise<string> {
-  const event = await prisma.agentEvent.create({
-    data: {
-      taskId,
-      iterationId,
-      agent,
-      type,
-      payload: (payload ?? {}) as Prisma.InputJsonValue,
-    },
-  });
+  const data: Record<string, unknown> = {
+    taskId,
+    agent,
+    type,
+    payload: payload ?? {},
+    createdAt: FieldValue.serverTimestamp(),
+  };
+
+  if (iterationId) {
+    data.iterationId = iterationId;
+  }
+
+  const ref = await db.collection('tasks').doc(taskId).collection('agentEvents').add(data);
 
   console.log(`[EVENT] ${agent} - ${type}:`, payload ? JSON.stringify(payload).substring(0, 200) : 'no payload');
 
-  return event.id;
+  return ref.id;
 }
 
 export async function getEventsForTask(
@@ -38,12 +42,29 @@ export async function getEventsForTask(
     payload: unknown;
   }>
 > {
-  return prisma.agentEvent.findMany({
-    where: {
-      taskId,
-      ...(afterTimestamp ? { createdAt: { gt: afterTimestamp } } : {}),
-    },
-    orderBy: { createdAt: 'asc' },
+  let query = db
+    .collection('tasks')
+    .doc(taskId)
+    .collection('agentEvents')
+    .orderBy('createdAt', 'asc');
+
+  if (afterTimestamp) {
+    query = query.where('createdAt', '>', afterTimestamp) as typeof query;
+  }
+
+  const snapshot = await query.get();
+
+  return snapshot.docs.map((doc) => {
+    const data = doc.data();
+    return {
+      id: doc.id,
+      taskId: data.taskId,
+      iterationId: data.iterationId ?? null,
+      createdAt: data.createdAt?.toDate() ?? new Date(),
+      agent: data.agent,
+      type: data.type,
+      payload: data.payload ?? {},
+    };
   });
 }
 
@@ -61,23 +82,32 @@ export async function getEventsForConversation(
     payload: unknown;
   }>
 > {
-  // Get all tasks for this conversation
-  const tasks = await prisma.task.findMany({
-    where: { conversationId },
-    select: { id: true },
-  });
+  const tasksSnapshot = await db
+    .collection('tasks')
+    .where('conversationId', '==', conversationId)
+    .get();
 
-  const taskIds = tasks.map((t: { id: string }) => t.id);
+  const taskIds = tasksSnapshot.docs.map((d) => d.id);
 
-  if (taskIds.length === 0) {
-    return [];
-  }
+  if (taskIds.length === 0) return [];
 
-  return prisma.agentEvent.findMany({
-    where: {
-      taskId: { in: taskIds },
-      ...(afterTimestamp ? { createdAt: { gt: afterTimestamp } } : {}),
-    },
-    orderBy: { createdAt: 'asc' },
-  });
+  const allEvents: Array<{
+    id: string;
+    taskId: string;
+    iterationId: string | null;
+    createdAt: Date;
+    agent: string;
+    type: string;
+    payload: unknown;
+  }> = [];
+
+  await Promise.all(
+    taskIds.map(async (tid) => {
+      const events = await getEventsForTask(tid, afterTimestamp);
+      allEvents.push(...events);
+    })
+  );
+
+  allEvents.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+  return allEvents;
 }

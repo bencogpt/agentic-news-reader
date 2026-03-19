@@ -1,16 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/firebase-admin';
+import { FieldValue } from 'firebase-admin/firestore';
 
 // Create a new conversation
 export async function POST() {
   try {
-    const conversation = await prisma.conversation.create({
-      data: {},
+    const ref = await db.collection('conversations').add({
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      activeTaskId: null,
     });
 
+    // Re-fetch to get resolved timestamps
+    const doc = await ref.get();
+    const data = doc.data()!;
+
     return NextResponse.json({
-      id: conversation.id,
-      createdAt: conversation.createdAt.toISOString(),
+      id: ref.id,
+      createdAt: data.createdAt?.toDate().toISOString() ?? new Date().toISOString(),
     });
   } catch (error) {
     console.error('Error creating conversation:', error);
@@ -27,36 +34,49 @@ export async function GET(request: NextRequest) {
   const offset = parseInt(request.nextUrl.searchParams.get('offset') || '0', 10);
 
   try {
-    const conversations = await prisma.conversation.findMany({
-      orderBy: { updatedAt: 'desc' },
-      take: limit,
-      skip: offset,
-      include: {
-        messages: {
-          orderBy: { createdAt: 'desc' },
-          take: 1,
-        },
-        tasks: {
-          orderBy: { createdAt: 'desc' },
-          take: 1,
-          select: {
-            id: true,
-            title: true,
-            status: true,
-          },
-        },
-      },
-    });
+    const snapshot = await db
+      .collection('conversations')
+      .orderBy('updatedAt', 'desc')
+      .limit(limit + offset)
+      .get();
 
-    return NextResponse.json({
-      conversations: conversations.map((c: { id: string; createdAt: Date; updatedAt: Date; messages: Array<{ text: string }>; tasks: Array<{ id: string; title: string | null; status: string }> }) => ({
-        id: c.id,
-        createdAt: c.createdAt.toISOString(),
-        updatedAt: c.updatedAt.toISOString(),
-        lastMessage: c.messages[0]?.text || null,
-        lastTask: c.tasks[0] || null,
-      })),
-    });
+    const docs = snapshot.docs.slice(offset);
+
+    const conversations = await Promise.all(
+      docs.map(async (doc) => {
+        const data = doc.data();
+
+        const [lastMessageSnapshot, lastTaskSnapshot] = await Promise.all([
+          db.collection('conversations').doc(doc.id)
+            .collection('messages')
+            .orderBy('createdAt', 'desc')
+            .limit(1)
+            .get(),
+          db.collection('tasks')
+            .where('conversationId', '==', doc.id)
+            .orderBy('createdAt', 'desc')
+            .limit(1)
+            .get(),
+        ]);
+
+        const lastMessage = lastMessageSnapshot.empty ? null : lastMessageSnapshot.docs[0].data().text;
+        const lastTask = lastTaskSnapshot.empty ? null : {
+          id: lastTaskSnapshot.docs[0].id,
+          title: lastTaskSnapshot.docs[0].data().title ?? null,
+          status: lastTaskSnapshot.docs[0].data().status,
+        };
+
+        return {
+          id: doc.id,
+          createdAt: data.createdAt?.toDate().toISOString() ?? new Date().toISOString(),
+          updatedAt: data.updatedAt?.toDate().toISOString() ?? new Date().toISOString(),
+          lastMessage,
+          lastTask,
+        };
+      })
+    );
+
+    return NextResponse.json({ conversations });
   } catch (error) {
     console.error('Error fetching conversations:', error);
     return NextResponse.json(

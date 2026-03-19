@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { prisma } from '@/lib/prisma';
+import { db } from '@/lib/firebase-admin';
 import { runAnalyst, processAnalystDecision } from '@/lib/agents/analyst';
 import { IntentSlots } from '@/lib/types';
-
-export const maxDuration = 120; // 2 minutes max
 
 interface RunRequest {
   taskId: string;
@@ -20,18 +18,26 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const task = await prisma.task.findUnique({
-      where: { id: body.taskId },
-    });
+    const taskDoc = await db.collection('tasks').doc(body.taskId).get();
 
-    if (!task) {
+    if (!taskDoc.exists) {
       return NextResponse.json(
         { error: 'Task not found' },
         { status: 404 }
       );
     }
 
-    // Only run if task is in appropriate state
+    const task = { id: taskDoc.id, ...taskDoc.data() } as {
+      id: string;
+      status: string;
+      currentRequest?: string;
+      notes?: string;
+      summary?: string;
+      sources?: Array<{ title: string; url: string; source: string }>;
+      context?: IntentSlots;
+      iterationCount: number;
+    };
+
     if (!['ACTIVE', 'WAITING_ANALYST'].includes(task.status)) {
       return NextResponse.json({
         message: `Task is in ${task.status} state, skipping analyst run`,
@@ -46,8 +52,8 @@ export async function POST(request: NextRequest) {
       taskId: task.id,
       request: task.currentRequest || '',
       slots,
-      notes: task.notes,
-      summary: task.summary,
+      notes: task.notes ?? null,
+      summary: task.summary ?? null,
       sources,
       iterationCount: task.iterationCount,
     });

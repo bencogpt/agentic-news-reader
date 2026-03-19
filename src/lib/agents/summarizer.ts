@@ -1,4 +1,5 @@
-import { prisma } from '../prisma';
+import { db } from '../firebase-admin';
+import { FieldValue } from 'firebase-admin/firestore';
 import { searchNews } from '../services/news';
 import { extractArticle } from '../services/article-extractor';
 import { generateCompletion, parseJsonResponse } from '../services/llm';
@@ -48,43 +49,61 @@ interface NotesResponse {
   uncertainties: string[];
 }
 
-export async function runSummarizer(iterationId: string, resultsPerSearch: number = 10): Promise<void> {
-  // Get the iteration with task context
-  const iteration = await prisma.searchIteration.findUnique({
-    where: { id: iterationId },
-    include: {
-      task: true,
-    },
-  });
+export async function runSummarizer(taskId: string, iterationId: string, resultsPerSearch: number = 10): Promise<void> {
+  const iterationRef = db.collection('tasks').doc(taskId).collection('searchIterations').doc(iterationId);
+  const iterationDoc = await iterationRef.get();
 
-  if (!iteration) {
+  if (!iterationDoc.exists) {
     throw new Error(`Iteration ${iterationId} not found`);
   }
 
-  const task = iteration.task;
+  const iteration = { id: iterationDoc.id, ...iterationDoc.data() } as {
+    id: string;
+    taskId: string;
+    query: string;
+    provider: string;
+    status: string;
+    resultsCount?: number;
+    selectedArticles?: unknown[];
+    error?: string;
+    createdAt: FirebaseFirestore.Timestamp;
+    updatedAt: FirebaseFirestore.Timestamp;
+  };
+
+  const taskDoc = await db.collection('tasks').doc(taskId).get();
+  if (!taskDoc.exists) {
+    throw new Error(`Task ${taskId} not found`);
+  }
+
+  const task = { id: taskDoc.id, ...taskDoc.data() } as {
+    id: string;
+    conversationId: string;
+    status: string;
+    currentRequest?: string;
+    notes?: string;
+    summary?: string;
+    sources?: Array<{ title: string; url: string; source: string }>;
+    context?: IntentSlots;
+    iterationCount: number;
+  };
+
+  const taskRef = db.collection('tasks').doc(taskId);
   const context = (task.context as IntentSlots) || {};
   const slots: IntentSlots = {
     topic: context.topic,
     timeWindow: context.timeWindow,
     outputType: context.outputType,
   };
-  // Use provider from iteration (chosen by analyst) with fallback to newsdata
   const provider: NewsProvider = (iteration.provider as NewsProvider) || 'newsdata';
 
   try {
-    // Update iteration status
-    await prisma.searchIteration.update({
-      where: { id: iterationId },
-      data: { status: 'RUNNING' },
-    });
+    await iterationRef.update({ status: 'RUNNING', updatedAt: FieldValue.serverTimestamp() });
 
-    // Emit search started event
-    await emitEvent(task.id, 'SUMMARIZER', 'SEARCH_STARTED', {
+    await emitEvent(taskId, 'SUMMARIZER', 'SEARCH_STARTED', {
       query: iteration.query,
       provider,
     }, iterationId);
 
-    // Search for articles - fetch based on user setting
     const searchResult = await searchNews({
       query: iteration.query,
       from: slots.timeWindow?.start,
@@ -94,8 +113,7 @@ export async function runSummarizer(iterationId: string, resultsPerSearch: numbe
     });
     const articles = searchResult.articles;
 
-    // Emit search results event with request URL for debugging
-    await emitEvent(task.id, 'SUMMARIZER', 'SEARCH_RESULTS', {
+    await emitEvent(taskId, 'SUMMARIZER', 'SEARCH_RESULTS', {
       count: articles.length,
       requestUrl: searchResult.requestUrl,
       dateRange: searchResult.dateRange,
@@ -106,39 +124,27 @@ export async function runSummarizer(iterationId: string, resultsPerSearch: numbe
       })),
     }, iterationId);
 
-    // Update iteration with results count
-    await prisma.searchIteration.update({
-      where: { id: iterationId },
-      data: {
-        resultsCount: articles.length,
-        selectedArticles: articles as object[],
-      },
+    await iterationRef.update({
+      resultsCount: articles.length,
+      selectedArticles: articles,
+      updatedAt: FieldValue.serverTimestamp(),
     });
 
     if (articles.length === 0) {
-      // No articles found
-      await prisma.searchIteration.update({
-        where: { id: iterationId },
-        data: {
-          status: 'DONE',
-          error: 'No articles found for query',
-        },
+      await iterationRef.update({
+        status: 'DONE',
+        error: 'No articles found for query',
+        updatedAt: FieldValue.serverTimestamp(),
       });
 
-      await prisma.task.update({
-        where: { id: task.id },
-        data: { status: 'WAITING_ANALYST' },
-      });
-
+      await taskRef.update({ status: 'WAITING_ANALYST', updatedAt: FieldValue.serverTimestamp() });
       return;
     }
 
-    // Process articles in parallel batches for speed
-    const BATCH_SIZE = 5; // Process 5 articles concurrently
+    const BATCH_SIZE = 5;
     const allNotes: ArticleNotes[] = [];
     const successfulSources: Array<{ title: string; url: string; source: string }> = [];
 
-    // Timeout wrapper for article processing
     const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, articleTitle: string): Promise<T | null> => {
       return Promise.race([
         promise,
@@ -151,16 +157,13 @@ export async function runSummarizer(iterationId: string, resultsPerSearch: numbe
       ]);
     };
 
-    // Helper to process a single article
     const processArticle = async (article: ArticleMeta): Promise<{ notes: ArticleNotes; source: { title: string; url: string; source: string } } | null> => {
       try {
-        // Emit article reading started
-        await emitEvent(task.id, 'SUMMARIZER', 'ARTICLE_READING_STARTED', {
+        await emitEvent(taskId, 'SUMMARIZER', 'ARTICLE_READING_STARTED', {
           articleUrl: article.url,
           articleTitle: article.title,
         }, iterationId);
 
-        // Extract article content with timeout (15 seconds)
         const extracted = await withTimeout(extractArticle(article), 15000, article.title);
 
         if (!extracted) {
@@ -168,7 +171,6 @@ export async function runSummarizer(iterationId: string, resultsPerSearch: numbe
           return null;
         }
 
-        // Generate notes from the article with timeout (20 seconds)
         const notes = await withTimeout(generateArticleNotes(article, extracted.content), 20000, article.title);
 
         if (!notes) {
@@ -176,14 +178,12 @@ export async function runSummarizer(iterationId: string, resultsPerSearch: numbe
           return null;
         }
 
-        // Emit article reading done
-        await emitEvent(task.id, 'SUMMARIZER', 'ARTICLE_READING_DONE', {
+        await emitEvent(taskId, 'SUMMARIZER', 'ARTICLE_READING_DONE', {
           articleUrl: article.url,
           articleTitle: article.title,
         }, iterationId);
 
-        // Emit notes updated
-        await emitEvent(task.id, 'SUMMARIZER', 'NOTES_UPDATED', {
+        await emitEvent(taskId, 'SUMMARIZER', 'NOTES_UPDATED', {
           articleTitle: article.title,
           notes: notes,
         }, iterationId);
@@ -206,7 +206,6 @@ export async function runSummarizer(iterationId: string, resultsPerSearch: numbe
       }
     };
 
-    // Process in batches
     for (let i = 0; i < articles.length; i += BATCH_SIZE) {
       const batch = articles.slice(i, i + BATCH_SIZE);
       const results = await Promise.allSettled(batch.map(processArticle));
@@ -221,81 +220,60 @@ export async function runSummarizer(iterationId: string, resultsPerSearch: numbe
 
     console.log(`[Summarizer] Processed ${successfulSources.length}/${articles.length} articles successfully`);
 
-    // Emit event showing all articles have been processed
-    await emitEvent(task.id, 'SUMMARIZER', 'ARTICLES_PROCESSED', {
+    await emitEvent(taskId, 'SUMMARIZER', 'ARTICLES_PROCESSED', {
       totalFound: articles.length,
       successfullyProcessed: successfulSources.length,
       articles: successfulSources.map(s => s.title),
     }, iterationId);
 
-    // Combine notes with existing task notes
     const existingNotes = task.notes || '';
     const newNotesText = formatNotes(allNotes);
     const combinedNotes = existingNotes
       ? `${existingNotes}\n\n---\n\n${newNotesText}`
       : newNotesText;
 
-    // Combine sources
-    const existingSources = (task.sources as Array<{ title: string; url: string; source: string }>) || [];
+    const existingSources = task.sources || [];
     const combinedSources = [...existingSources, ...successfulSources];
 
-    // Generate updated summary
     const summary = await generateSummary(
       task.currentRequest || '',
       slots,
       combinedNotes
     );
 
-    // Update task with notes and summary
-    await prisma.task.update({
-      where: { id: task.id },
-      data: {
-        notes: combinedNotes,
-        summary,
-        sources: combinedSources as object[],
-        status: 'WAITING_ANALYST',
-      },
+    await taskRef.update({
+      notes: combinedNotes,
+      summary,
+      sources: combinedSources,
+      status: 'WAITING_ANALYST',
+      updatedAt: FieldValue.serverTimestamp(),
     });
 
-    // Emit summary updated with list of articles used
-    await emitEvent(task.id, 'SUMMARIZER', 'SUMMARY_UPDATED', {
+    await emitEvent(taskId, 'SUMMARIZER', 'SUMMARY_UPDATED', {
       summary,
       articlesUsed: successfulSources.map(s => s.title),
       articleCount: successfulSources.length,
     }, iterationId);
 
-    // Mark iteration as done
-    await prisma.searchIteration.update({
-      where: { id: iterationId },
-      data: { status: 'DONE' },
-    });
+    await iterationRef.update({ status: 'DONE', updatedAt: FieldValue.serverTimestamp() });
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
 
-    // Mark iteration as failed with full error details
-    await prisma.searchIteration.update({
-      where: { id: iterationId },
-      data: {
-        status: 'FAILED',
-        error: errorMessage,
-      },
+    await iterationRef.update({
+      status: 'FAILED',
+      error: errorMessage,
+      updatedAt: FieldValue.serverTimestamp(),
     });
 
-    // Emit error event
-    await emitEvent(task.id, 'SUMMARIZER', 'ERROR', {
+    await emitEvent(taskId, 'SUMMARIZER', 'ERROR', {
       error: 'Summarizer processing failed',
       details: errorMessage,
       provider,
       query: iteration.query,
     }, iterationId);
 
-    // Set task back to waiting analyst so it can retry with different provider
-    await prisma.task.update({
-      where: { id: task.id },
-      data: { status: 'WAITING_ANALYST' },
-    });
+    await taskRef.update({ status: 'WAITING_ANALYST', updatedAt: FieldValue.serverTimestamp() });
 
-    // Don't throw - let the flow continue so analyst can retry
     console.error(`[Summarizer] Failed on ${provider}: ${errorMessage}`);
   }
 }
@@ -378,18 +356,21 @@ function formatNotes(notesList: ArticleNotes[]): string {
 }
 
 export async function processPendingIterations(): Promise<void> {
-  // Find all pending iterations
-  const pendingIterations = await prisma.searchIteration.findMany({
-    where: { status: 'PENDING' },
-    orderBy: { createdAt: 'asc' },
-    take: 5, // Process up to 5 at a time
-  });
+  const snapshot = await db
+    .collectionGroup('searchIterations')
+    .where('status', '==', 'PENDING')
+    .orderBy('createdAt', 'asc')
+    .limit(5)
+    .get();
 
-  for (const iteration of pendingIterations) {
+  for (const doc of snapshot.docs) {
+    const data = doc.data();
+    const iterationTaskId = data.taskId as string;
+    const iterationId = doc.id;
     try {
-      await runSummarizer(iteration.id);
+      await runSummarizer(iterationTaskId, iterationId);
     } catch (error) {
-      console.error(`Error processing iteration ${iteration.id}:`, error);
+      console.error(`Error processing iteration ${iterationId}:`, error);
     }
   }
 }

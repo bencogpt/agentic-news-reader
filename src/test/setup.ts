@@ -5,46 +5,42 @@ import { beforeAll, afterAll, vi } from 'vitest';
 beforeAll(() => {
   process.env.NEWS_API_KEY = 'test-api-key';
   process.env.OPENAI_API_KEY = 'test-openai-key';
-  process.env.DATABASE_URL = 'postgresql://test:test@localhost:5432/test';
+  process.env.FIREBASE_PROJECT_ID = 'test-project';
+  process.env.FIREBASE_CLIENT_EMAIL = 'test@test.iam.gserviceaccount.com';
+  process.env.FIREBASE_PRIVATE_KEY = '-----BEGIN PRIVATE KEY-----\ntest\n-----END PRIVATE KEY-----\n';
 });
 
 afterAll(() => {
   vi.restoreAllMocks();
 });
 
-// Mock Prisma globally
-vi.mock('@/lib/prisma', () => ({
-  prisma: {
-    conversation: {
-      create: vi.fn(),
-      findUnique: vi.fn(),
-      findMany: vi.fn(),
-      update: vi.fn(),
-      delete: vi.fn(),
-    },
-    message: {
-      create: vi.fn(),
-      findMany: vi.fn(),
-    },
-    task: {
-      create: vi.fn(),
-      findUnique: vi.fn(),
-      findMany: vi.fn(),
-      update: vi.fn(),
-    },
-    taskRequest: {
-      create: vi.fn(),
-    },
-    searchIteration: {
-      create: vi.fn(),
-      findUnique: vi.fn(),
-      findMany: vi.fn().mockResolvedValue([]),
-      findFirst: vi.fn(),
-      update: vi.fn(),
-    },
-    agentEvent: {
-      create: vi.fn(),
-      findMany: vi.fn(),
-    },
+// Mock firebase-admin globally
+const makeChain = () => {
+  const chain: Record<string, unknown> = {};
+  const methods = ['where', 'orderBy', 'limit', 'collection', 'doc'];
+  methods.forEach((m) => {
+    chain[m] = vi.fn().mockReturnValue(chain);
+  });
+  chain['get'] = vi.fn().mockResolvedValue({ docs: [], empty: true });
+  chain['add'] = vi.fn().mockResolvedValue({ id: 'new-doc-id' });
+  chain['update'] = vi.fn().mockResolvedValue(undefined);
+  chain['set'] = vi.fn().mockResolvedValue(undefined);
+  chain['delete'] = vi.fn().mockResolvedValue(undefined);
+  return chain;
+};
+
+vi.mock('@/lib/firebase-admin', () => ({
+  db: {
+    collection: vi.fn().mockImplementation(() => makeChain()),
+    collectionGroup: vi.fn().mockImplementation(() => makeChain()),
+    recursiveDelete: vi.fn().mockResolvedValue(undefined),
+  },
+  admin: {},
+}));
+
+vi.mock('firebase-admin/firestore', () => ({
+  FieldValue: {
+    serverTimestamp: vi.fn().mockReturnValue('SERVER_TIMESTAMP'),
+    increment: vi.fn().mockImplementation((n: number) => ({ _increment: n })),
   },
 }));
