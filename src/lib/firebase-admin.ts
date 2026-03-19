@@ -15,21 +15,10 @@ function getDb(): Firestore {
   if (admin.apps.length > 0) {
     app = admin.apps[0]!;
   } else {
-    const projectId = process.env.FIREBASE_PROJECT_ID || process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
-    const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
-    const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n');
-
-    // In Firebase App Hosting, use Application Default Credentials (ADC).
-    // Fall back to explicit service account only when all three vars are present (local dev).
-    if (clientEmail && privateKey) {
-      app = admin.initializeApp({
-        credential: admin.credential.cert({ projectId, clientEmail, privateKey }),
-        projectId,
-      });
-    } else {
-      // ADC — works automatically in App Hosting via firebase-app-hosting-compute SA
-      app = admin.initializeApp({ projectId });
-    }
+    const projectId = process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
+    // Use Application Default Credentials — works in App Hosting (firebase-app-hosting-compute SA)
+    // and locally when GOOGLE_APPLICATION_CREDENTIALS is set or via `gcloud auth application-default login`.
+    app = admin.initializeApp({ projectId });
   }
 
   const firestore = app.firestore();
