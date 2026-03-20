@@ -1,11 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import dynamic from 'next/dynamic';
 import Link from 'next/link';
 import { SignInButton } from '@/components/SignInButton';
 import { useAuth } from '@/components/AuthProvider';
 import { type HotspotCategory, CATEGORY_COLORS } from '@/lib/constants/news-hotspots';
+import type { QueryMarker } from '@/components/WorldMap';
 
 const WorldMap = dynamic(() => import('@/components/WorldMap').then(m => m.WorldMap), {
   ssr: false,
@@ -29,6 +30,24 @@ export default function Home() {
   const [activeCategories, setActiveCategories] = useState<Set<HotspotCategory>>(
     new Set(['conflict', 'politics', 'economy', 'climate', 'technology'])
   );
+  const [queryMarkers, setQueryMarkers] = useState<QueryMarker[]>([]);
+  const [markersLoading, setMarkersLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/dashboard/query-markers');
+        if (res.ok) {
+          const data = await res.json() as { markers: QueryMarker[] };
+          setQueryMarkers(data.markers ?? []);
+        }
+      } catch {
+        // silently fail — map still works with editorial hotspots only
+      } finally {
+        setMarkersLoading(false);
+      }
+    })();
+  }, []);
 
   const toggleCategory = (cat: HotspotCategory) => {
     setActiveCategories((prev) => {
@@ -38,7 +57,6 @@ export default function Home() {
       } else {
         next.add(cat);
       }
-      // If nothing selected, show all
       if (next.size === 0) {
         return new Set(['conflict', 'politics', 'economy', 'climate', 'technology']);
       }
@@ -60,6 +78,13 @@ export default function Home() {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
+          {/* Live query count badge */}
+          {!markersLoading && queryMarkers.length > 0 && (
+            <span className="hidden sm:flex items-center gap-1.5 text-xs text-slate-400 bg-slate-800 px-2.5 py-1 rounded-full border border-slate-700">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+              {queryMarkers.length} live {queryMarkers.length === 1 ? 'query' : 'queries'}
+            </span>
+          )}
           {user && (
             <Link
               href="/cases"
@@ -68,6 +93,12 @@ export default function Home() {
               My Cases
             </Link>
           )}
+          <Link
+            href="/dashboard"
+            className="text-sm text-slate-300 hover:text-white transition-colors hidden sm:block"
+          >
+            Dashboard
+          </Link>
           <Link
             href="/chat"
             className="px-3 sm:px-4 py-1.5 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
@@ -80,12 +111,20 @@ export default function Home() {
 
       {/* Map — fills remaining height */}
       <div className="relative flex-1 overflow-hidden">
-        <WorldMap activeCategories={activeCategories} />
+        <WorldMap activeCategories={activeCategories} queryMarkers={queryMarkers} />
 
         {/* Overlay hint */}
         <div className="absolute top-4 left-1/2 -translate-x-1/2 bg-slate-900/80 backdrop-blur text-slate-300 text-xs px-3 py-1.5 rounded-full border border-slate-700 pointer-events-none">
           Click any marker to research that topic
         </div>
+
+        {/* Loading indicator while fetching query markers */}
+        {markersLoading && (
+          <div className="absolute top-4 right-4 flex items-center gap-2 bg-slate-900/80 backdrop-blur text-slate-400 text-xs px-3 py-1.5 rounded-full border border-slate-700">
+            <div className="w-3 h-3 border border-slate-400 border-t-transparent rounded-full animate-spin" />
+            Loading queries…
+          </div>
+        )}
       </div>
 
       {/* Bottom category filter bar */}

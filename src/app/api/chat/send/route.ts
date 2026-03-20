@@ -5,9 +5,9 @@ import { runUFA } from '@/lib/agents/ufa';
 import { runAnalyst, processAnalystDecision } from '@/lib/agents/analyst';
 import { IntentSlots } from '@/lib/types';
 
-type NewsProvider = 'gnews' | 'newsapi' | 'newsdata' | 'guardian' | 'currents' | 'mediastack';
+type NewsProvider = 'gnews' | 'newsapi' | 'newsdata' | 'guardian' | 'currents' | 'mediastack' | 'duckduckgo';
 
-const ALL_PROVIDERS: NewsProvider[] = ['newsdata', 'currents', 'gnews', 'guardian', 'mediastack'];
+const ALL_PROVIDERS: NewsProvider[] = ['newsdata', 'currents', 'gnews', 'guardian', 'mediastack', 'duckduckgo'];
 
 interface SendRequest {
   conversationId?: string;
@@ -161,6 +161,7 @@ async function triggerAnalyst(
       sources?: Array<{ title: string; url: string; source: string }>;
       context?: IntentSlots;
       iterationCount: number;
+      subQueries?: string[];
     };
 
     if (task.status === 'COMPLETED' || task.status === 'FAILED') {
@@ -200,6 +201,7 @@ async function triggerAnalyst(
       maxSearches,
       iterationHistory,
       enabledProviders,
+      subQueries: task.subQueries ?? [],
     });
 
     await processAnalystDecision(taskId, decision);

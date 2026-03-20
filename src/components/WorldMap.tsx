@@ -18,21 +18,43 @@ import {
 
 const GEO_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/countries-110m.json';
 
-interface WorldMapProps {
-  activeCategories: Set<HotspotCategory>;
+export interface QueryMarker {
+  id: string;
+  label: string;
+  query: string;
+  coordinates: [number, number];
+  category: HotspotCategory;
+  location: string;
+  createdAt: string | null;
+  status: string;
 }
 
-export function WorldMap({ activeCategories }: WorldMapProps) {
+interface TooltipData {
+  type: 'hotspot' | 'query';
+  hotspot?: NewsHotspot;
+  queryMarker?: QueryMarker;
+}
+
+interface WorldMapProps {
+  activeCategories: Set<HotspotCategory>;
+  queryMarkers?: QueryMarker[];
+}
+
+export function WorldMap({ activeCategories, queryMarkers = [] }: WorldMapProps) {
   const router = useRouter();
-  const [hoveredHotspot, setHoveredHotspot] = useState<NewsHotspot | null>(null);
+  const [hovered, setHovered] = useState<TooltipData | null>(null);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
 
   const visibleHotspots = NEWS_HOTSPOTS.filter((h) =>
     activeCategories.size === 0 || activeCategories.has(h.category)
   );
 
-  const handleMarkerClick = (hotspot: NewsHotspot) => {
-    router.push(`/chat?q=${encodeURIComponent(hotspot.query)}`);
+  const visibleQueryMarkers = queryMarkers.filter((q) =>
+    activeCategories.size === 0 || activeCategories.has(q.category)
+  );
+
+  const updateTooltip = (e: React.MouseEvent) => {
+    setTooltipPos({ x: e.clientX, y: e.clientY });
   };
 
   return (
@@ -52,18 +74,8 @@ export function WorldMap({ activeCategories }: WorldMapProps) {
                   key={geo.rsmKey}
                   geography={geo}
                   style={{
-                    default: {
-                      fill: '#1e293b',
-                      stroke: '#334155',
-                      strokeWidth: 0.5,
-                      outline: 'none',
-                    },
-                    hover: {
-                      fill: '#334155',
-                      stroke: '#475569',
-                      strokeWidth: 0.5,
-                      outline: 'none',
-                    },
+                    default: { fill: '#1e293b', stroke: '#334155', strokeWidth: 0.5, outline: 'none' },
+                    hover:   { fill: '#334155', stroke: '#475569', strokeWidth: 0.5, outline: 'none' },
                     pressed: { outline: 'none' },
                   }}
                 />
@@ -71,42 +83,57 @@ export function WorldMap({ activeCategories }: WorldMapProps) {
             }
           </Geographies>
 
+          {/* Static editorial hotspots */}
           {visibleHotspots.map((hotspot) => (
             <Marker
               key={hotspot.id}
               coordinates={hotspot.coordinates}
               onMouseEnter={(e: React.MouseEvent) => {
-                setHoveredHotspot(hotspot);
-                setTooltipPos({ x: e.clientX, y: e.clientY });
+                setHovered({ type: 'hotspot', hotspot });
+                updateTooltip(e);
               }}
-              onMouseLeave={() => setHoveredHotspot(null)}
-              onMouseMove={(e: React.MouseEvent) => {
-                setTooltipPos({ x: e.clientX, y: e.clientY });
-              }}
-              onClick={() => handleMarkerClick(hotspot)}
+              onMouseLeave={() => setHovered(null)}
+              onMouseMove={updateTooltip}
+              onClick={() => router.push(`/chat?q=${encodeURIComponent(hotspot.query)}`)}
               style={{ cursor: 'pointer' }}
             >
-              {/* Outer pulse ring */}
-              <circle
-                r={10}
-                fill={CATEGORY_COLORS[hotspot.category]}
-                fillOpacity={0.15}
-                stroke="none"
-              />
-              {/* Inner dot */}
-              <circle
-                r={5}
-                fill={CATEGORY_COLORS[hotspot.category]}
-                stroke="white"
-                strokeWidth={1}
-              />
+              {/* Pulse ring */}
+              <circle r={10} fill={CATEGORY_COLORS[hotspot.category]} fillOpacity={0.15} stroke="none" />
+              {/* Solid dot */}
+              <circle r={5} fill={CATEGORY_COLORS[hotspot.category]} stroke="white" strokeWidth={1} />
             </Marker>
           ))}
+
+          {/* Dynamic user query markers */}
+          {visibleQueryMarkers.map((qm) => {
+            const color = CATEGORY_COLORS[qm.category];
+            return (
+              <Marker
+                key={`q-${qm.id}`}
+                coordinates={qm.coordinates}
+                onMouseEnter={(e: React.MouseEvent) => {
+                  setHovered({ type: 'query', queryMarker: qm });
+                  updateTooltip(e);
+                }}
+                onMouseLeave={() => setHovered(null)}
+                onMouseMove={updateTooltip}
+                onClick={() => router.push(`/chat?q=${encodeURIComponent(qm.query)}`)}
+                style={{ cursor: 'pointer' }}
+              >
+                {/* Outer pulse ring — slightly larger than hotspots for visibility */}
+                <circle r={12} fill={color} fillOpacity={0.08} stroke={color} strokeWidth={0.5} strokeOpacity={0.3} />
+                {/* Hollow marker: white fill with colored border — visually distinct from solid hotspots */}
+                <circle r={4} fill="white" stroke={color} strokeWidth={2} />
+                {/* Center dot */}
+                <circle r={1.5} fill={color} />
+              </Marker>
+            );
+          })}
         </ZoomableGroup>
       </ComposableMap>
 
       {/* Tooltip */}
-      {hoveredHotspot && (
+      {hovered && (
         <div
           className="fixed z-50 pointer-events-none bg-gray-900 text-white text-sm rounded-lg px-3 py-2 shadow-xl border border-gray-700 max-w-xs"
           style={{
@@ -115,14 +142,49 @@ export function WorldMap({ activeCategories }: WorldMapProps) {
             transform: 'translateY(-50%)',
           }}
         >
-          <div className="font-semibold mb-0.5">{hoveredHotspot.label}</div>
-          <div className="text-xs text-gray-300 leading-tight">{hoveredHotspot.query}</div>
-          <div
-            className="text-xs mt-1 font-medium capitalize"
-            style={{ color: CATEGORY_COLORS[hoveredHotspot.category] }}
-          >
-            {hoveredHotspot.category}
-          </div>
+          {hovered.type === 'hotspot' && hovered.hotspot && (
+            <>
+              <div className="font-semibold mb-0.5">{hovered.hotspot.label}</div>
+              <div className="text-xs text-gray-300 leading-tight">{hovered.hotspot.query}</div>
+              <div className="text-xs mt-1 font-medium capitalize" style={{ color: CATEGORY_COLORS[hovered.hotspot.category] }}>
+                {hovered.hotspot.category}
+              </div>
+            </>
+          )}
+          {hovered.type === 'query' && hovered.queryMarker && (
+            <>
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className="text-xs px-1.5 py-0.5 rounded bg-white/10 text-gray-300">User query</span>
+                <span
+                  className="text-xs font-medium capitalize"
+                  style={{ color: CATEGORY_COLORS[hovered.queryMarker.category] }}
+                >
+                  {hovered.queryMarker.category}
+                </span>
+              </div>
+              <div className="font-semibold leading-snug">{hovered.queryMarker.label}</div>
+              <div className="text-xs text-gray-400 mt-0.5">{hovered.queryMarker.location}</div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Legend */}
+      {visibleQueryMarkers.length > 0 && (
+        <div className="absolute bottom-4 right-4 flex items-center gap-4 bg-slate-900/80 backdrop-blur border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-400">
+          <span className="flex items-center gap-1.5">
+            <svg width="14" height="14" viewBox="0 0 14 14">
+              <circle cx="7" cy="7" r="5" fill="#64748b" stroke="white" strokeWidth="1" />
+            </svg>
+            Editorial hotspot
+          </span>
+          <span className="flex items-center gap-1.5">
+            <svg width="14" height="14" viewBox="0 0 14 14">
+              <circle cx="7" cy="7" r="4" fill="white" stroke="#64748b" strokeWidth="2" />
+              <circle cx="7" cy="7" r="1.5" fill="#64748b" />
+            </svg>
+            User query ({visibleQueryMarkers.length})
+          </span>
         </div>
       )}
     </div>

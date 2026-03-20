@@ -55,7 +55,7 @@ export type UFAAction =
   | { type: 'RESPOND'; message: string };
 
 // News provider types
-export type NewsProvider = 'gnews' | 'newsapi' | 'newsdata' | 'guardian' | 'currents' | 'mediastack';
+export type NewsProvider = 'gnews' | 'newsapi' | 'newsdata' | 'guardian' | 'currents' | 'mediastack' | 'duckduckgo';
 
 // Analyst Decision
 export type AnalystDecision =

@@ -44,14 +44,18 @@ You MUST choose a news provider for each search. Available providers:
 | guardian | UK/international news | UK-focused coverage | Good for politics, world news |
 | currents | Wide coverage | 600 req/day | Broad topic searches |
 | mediastack | Historical data | 500 req/month | Good for older stories |
+| duckduckgo | Fallback when others fail | No rate limit, web results | Simple keyword queries only |
 
 PROVIDER SELECTION RULES:
 - Start with "newsdata" as the default - it's most reliable
 - Use "gnews" for US-centric breaking news (but queries must be simple!)
 - Use "guardian" for UK/European topics
 - NEVER use "newsapi" - it only works on localhost
-- If a provider fails, SWITCH to a different one on retry
+- If a provider fails due to rate limit, SWITCH to a different one
+- Use "duckduckgo" ONLY as a last resort when all other providers are rate-limited
 - If a query has special characters or complex syntax, use "newsdata" (more forgiving)
+
+SEARCH ROADMAP: If you see a SEARCH ROADMAP section, follow the sub-queries in order — each iteration should use the next suggested sub-query. This ensures all aspects of a complex question are covered.
 
 If information is INSUFFICIENT or could be MORE COMPREHENSIVE, generate a SEARCH query:
 - Be specific and targeted
@@ -126,6 +130,46 @@ interface AnalystInput {
   maxSearches?: number;
   iterationHistory?: SearchIterationHistory[];
   enabledProviders?: NewsProvider[];
+  subQueries?: string[];
+}
+
+interface DecomposedQuery {
+  isComplex: boolean;
+  subQueries: string[];
+  cleanTopic: string;
+}
+
+async function decomposeIfComplex(request: string, slots: IntentSlots): Promise<DecomposedQuery> {
+  const trivial: DecomposedQuery = { isComplex: false, subQueries: [], cleanTopic: slots.topic || request };
+
+  // Heuristics: question marks, conjunctions, analytical phrases, length
+  const complexSignals = [
+    /\?.*\?/.test(request),                                          // multiple questions
+    /\b(and|also|additionally|furthermore|moreover)\b/i.test(request),
+    /\b(analyze|analysis|implications|perspective|compare|versus|vs)\b/i.test(request),
+    request.split(' ').length > 15,
+  ];
+  if (complexSignals.filter(Boolean).length < 2) return trivial;
+
+  try {
+    const raw = await generateCompletion({
+      systemPrompt: `You are a search query strategist. Given a complex research question, break it into 2-4 focused, searchable sub-queries that together answer the full question.
+Strip analytical/opinion requests ("how would you analyze", "what do you think") — convert them into factual search angles.
+Return JSON only: {"isComplex": true, "cleanTopic": "short topic label", "subQueries": ["query 1", "query 2", ...]}
+Each sub-query should be a simple news search string (3-6 words, no special characters).`,
+      userPrompt: `Request: "${request}"\nTopic slot: "${slots.topic || 'not set'}"`,
+      jsonMode: true,
+      temperature: 0.2,
+      maxTokens: 300,
+    });
+    const parsed = await parseJsonResponse<DecomposedQuery>(raw);
+    if (parsed.isComplex && Array.isArray(parsed.subQueries) && parsed.subQueries.length > 0) {
+      return parsed;
+    }
+  } catch {
+    // fallback to trivial
+  }
+  return trivial;
 }
 
 interface AnalystResponse {
@@ -137,7 +181,8 @@ interface AnalystResponse {
 }
 
 // Valid providers (excluding newsapi which only works on localhost)
-const VALID_PROVIDERS: NewsProvider[] = ['newsdata', 'gnews', 'guardian', 'currents', 'mediastack'];
+// duckduckgo is a rate-limit-free fallback of last resort
+const VALID_PROVIDERS: NewsProvider[] = ['newsdata', 'gnews', 'guardian', 'currents', 'mediastack', 'duckduckgo'];
 
 // Provider info for building prompts
 const PROVIDER_INFO: Record<NewsProvider, { name: string; description: string }> = {
@@ -147,13 +192,23 @@ const PROVIDER_INFO: Record<NewsProvider, { name: string; description: string }>
   currents: { name: 'Currents', description: '600/day, wide coverage' },
   mediastack: { name: 'Mediastack', description: '500/month, historical data' },
   newsapi: { name: 'NewsAPI', description: 'Localhost only' },
+  duckduckgo: { name: 'DuckDuckGo', description: 'Unlimited, fallback when APIs are rate-limited' },
 };
+
+// Rate-limit error signals
+const RATE_LIMIT_SIGNALS = ['rate limit', '429', 'quota', 'exceeded', 'too many requests', 'daily limit', 'limit reached', 'upgrade'];
+
+function isRateLimitError(error: string): boolean {
+  const lower = error.toLowerCase();
+  return RATE_LIMIT_SIGNALS.some((s) => lower.includes(s));
+}
 
 function isValidProviderForList(provider: string | undefined, enabledList: NewsProvider[]): provider is NewsProvider {
   return enabledList.includes(provider as NewsProvider);
 }
 
 function getAlternateProvider(failedProvider: NewsProvider, recentlyFailedProviders: NewsProvider[], enabledList: NewsProvider[]): NewsProvider {
+  // Regular providers first, duckduckgo is always last resort
   const priority: NewsProvider[] = ['newsdata', 'gnews', 'currents', 'guardian', 'mediastack'];
 
   for (const provider of priority) {
@@ -162,7 +217,8 @@ function getAlternateProvider(failedProvider: NewsProvider, recentlyFailedProvid
     }
   }
 
-  return enabledList[0] || 'newsdata';
+  // All regular providers exhausted → fall back to DuckDuckGo
+  return 'duckduckgo';
 }
 
 export async function runAnalyst(input: AnalystInput): Promise<AnalystDecision> {
@@ -173,6 +229,36 @@ export async function runAnalyst(input: AnalystInput): Promise<AnalystDecision> 
   const activeProviders: NewsProvider[] = enabledProviders && enabledProviders.length > 0
     ? enabledProviders.filter((p): p is NewsProvider => VALID_PROVIDERS.includes(p))
     : [...VALID_PROVIDERS];
+
+  // Ensure duckduckgo is always available as a fallback regardless of enabledProviders
+  if (!activeProviders.includes('duckduckgo')) {
+    activeProviders.push('duckduckgo');
+  }
+
+  // On first iteration: decompose complex queries and store sub-queries on the task
+  let subQueries = input.subQueries ?? [];
+  if (iterationCount === 0 && subQueries.length === 0) {
+    const decomposed = await decomposeIfComplex(request, slots);
+    if (decomposed.isComplex && decomposed.subQueries.length > 0) {
+      subQueries = decomposed.subQueries;
+      await db.collection('tasks').doc(taskId).update({ subQueries });
+      console.log(`[Analyst] Decomposed complex query into ${subQueries.length} sub-queries:`, subQueries);
+      await emitEvent(taskId, 'ANALYST', 'TASK_UPDATED', {
+        changes: `Query decomposed into ${subQueries.length} sub-queries: ${subQueries.join(' | ')}`,
+      });
+    }
+  }
+
+  // Detect if ALL regular providers are rate-limited — force duckduckgo
+  const rateLimitedProviders = (iterationHistory ?? [])
+    .filter((h) => h.status === 'FAILED' && h.error && isRateLimitError(h.error))
+    .map((h) => h.provider as NewsProvider);
+
+  const regularProviders: NewsProvider[] = ['newsdata', 'gnews', 'guardian', 'currents', 'mediastack'];
+  const availableRegular = regularProviders.filter(
+    (p) => activeProviders.includes(p) && !rateLimitedProviders.includes(p)
+  );
+  const allRateLimited = availableRegular.length === 0 && rateLimitedProviders.length > 0;
 
   // Check for failed iterations
   const failedSnapshot = await db
@@ -252,7 +338,7 @@ INSTRUCTIONS FOR RETRY:
 3. If the error mentions "syntax", the query format is wrong for that provider
 4. If the error mentions "rate limit", switch to a different provider`;
 
-    const userPromptWithError = buildAnalystPrompt(request, slots, notes, summary, sources, iterationCount, maxIterations, false, iterationHistory, activeProviders) + errorContext;
+    const userPromptWithError = buildAnalystPrompt(request, slots, notes, summary, sources, iterationCount, maxIterations, false, iterationHistory, activeProviders, subQueries) + errorContext;
 
     try {
       const response = await generateCompletion({
@@ -311,6 +397,20 @@ INSTRUCTIONS FOR RETRY:
     sourceCount: sources.length,
   });
 
+  // If all regular APIs are rate-limited, force-use duckduckgo immediately
+  if (allRateLimited) {
+    const ddgQuery = subQueries[iterationCount] ?? buildFallbackQuery(request, slots);
+    console.log(`[Analyst] All APIs rate-limited — falling back to DuckDuckGo: "${ddgQuery}"`);
+    await emitEvent(taskId, 'ANALYST', 'ANALYST_DECISION', {
+      decision: 'SEARCH',
+      reason: 'All news APIs rate-limited — using DuckDuckGo as unlimited fallback',
+      query: ddgQuery,
+      provider: 'duckduckgo',
+    });
+    await emitEvent(taskId, 'ANALYST', 'SEARCH_QUERY_CREATED', { query: ddgQuery, provider: 'duckduckgo' });
+    return { type: 'SEARCH', query: ddgQuery, provider: 'duckduckgo', reason: 'All APIs rate-limited — DuckDuckGo fallback' };
+  }
+
   const forceComplete = iterationCount >= maxIterations;
 
   if (forceComplete) {
@@ -320,7 +420,7 @@ INSTRUCTIONS FOR RETRY:
     });
   }
 
-  const userPrompt = buildAnalystPrompt(request, slots, notes, summary, sources, iterationCount, maxIterations, forceComplete, iterationHistory, activeProviders);
+  const userPrompt = buildAnalystPrompt(request, slots, notes, summary, sources, iterationCount, maxIterations, forceComplete, iterationHistory, activeProviders, subQueries);
 
   try {
     const response = await generateCompletion({
@@ -543,7 +643,8 @@ function buildAnalystPrompt(
   maxIterations: number,
   forceComplete: boolean,
   iterationHistory?: SearchIterationHistory[],
-  enabledProviders?: NewsProvider[]
+  enabledProviders?: NewsProvider[],
+  subQueries?: string[]
 ): string {
   let prompt = `## USER REQUEST\n${request}\n\n`;
 
@@ -555,6 +656,21 @@ function buildAnalystPrompt(
     prompt += `- Time Window: Not specified\n`;
   }
   prompt += `- Output Type: ${slots.outputType || 'summary'}\n\n`;
+
+  // Inject sub-queries as a guided search roadmap
+  if (subQueries && subQueries.length > 0) {
+    const nextSubQuery = subQueries[iterationCount] ?? null;
+    prompt += `## SEARCH ROADMAP (from query decomposition)\n`;
+    prompt += `This complex query was broken into ${subQueries.length} focused sub-queries:\n`;
+    subQueries.forEach((q, i) => {
+      const marker = i < iterationCount ? '✓' : i === iterationCount ? '→' : ' ';
+      prompt += `  ${marker} ${i + 1}. "${q}"\n`;
+    });
+    if (nextSubQuery && iterationCount < subQueries.length) {
+      prompt += `\nYour NEXT search should cover: "${nextSubQuery}"\n`;
+    }
+    prompt += '\n';
+  }
 
   if (enabledProviders && enabledProviders.length > 0) {
     prompt += `## ENABLED NEWS SOURCES\n`;

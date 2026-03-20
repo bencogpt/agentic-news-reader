@@ -5,8 +5,9 @@ import { searchNewsData } from './newsdata';
 import { searchCurrents } from './currents';
 import { searchMediastack } from './mediastack';
 import { searchGuardian } from './guardian';
+import { searchDuckDuckGo } from './duckduckgo';
 
-export type NewsProvider = 'gnews' | 'newsapi' | 'newsdata' | 'guardian' | 'currents' | 'mediastack';
+export type NewsProvider = 'gnews' | 'newsapi' | 'newsdata' | 'guardian' | 'currents' | 'mediastack' | 'duckduckgo';
 
 interface SearchParams {
   query: string;
@@ -101,6 +102,12 @@ export async function searchNews(params: SearchParams): Promise<NewsSearchResult
         requestUrl: result.requestUrl,
         provider: 'mediastack',
       };
+    }
+
+    case 'duckduckgo': {
+      console.log('[News] Using DuckDuckGo (rate-limit fallback)');
+      const result = await searchDuckDuckGo({ query: params.query, pageSize: params.pageSize });
+      return { articles: result.articles, provider: 'duckduckgo' };
     }
 
     case 'gnews':
