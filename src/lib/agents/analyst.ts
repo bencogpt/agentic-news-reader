@@ -230,11 +230,6 @@ export async function runAnalyst(input: AnalystInput): Promise<AnalystDecision> 
     ? enabledProviders.filter((p): p is NewsProvider => VALID_PROVIDERS.includes(p))
     : [...VALID_PROVIDERS];
 
-  // Ensure duckduckgo is always available as a fallback regardless of enabledProviders
-  if (!activeProviders.includes('duckduckgo')) {
-    activeProviders.push('duckduckgo');
-  }
-
   // On first iteration: decompose complex queries and store sub-queries on the task
   let subQueries = input.subQueries ?? [];
   if (iterationCount === 0 && subQueries.length === 0) {
