@@ -3,6 +3,7 @@ import { db } from '@/lib/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { runAnalyst, processAnalystDecision } from '@/lib/agents/analyst';
 import { runSummarizer } from '@/lib/agents/summarizer';
+import { emitEvent } from '@/lib/services/events';
 import { IntentSlots, NewsProvider } from '@/lib/types';
 
 export async function POST(request: NextRequest) {
@@ -108,7 +109,12 @@ async function runPipeline(taskId: string): Promise<void> {
     await processAnalystDecision(taskId, decision);
 
     if (decision.type !== 'SEARCH') {
-      // COMPLETE or FAIL — done
+      // Emit TASK_UPDATED AFTER processAnalystDecision writes the final status to Firestore.
+      // This ensures the client refreshes AFTER the task is COMPLETED/FAILED,
+      // avoiding the race condition where RESPONSE_FINALIZED fires before the status write.
+      await emitEvent(taskId, 'SYSTEM', 'TASK_UPDATED', {
+        status: decision.type === 'COMPLETE' ? 'COMPLETED' : 'FAILED',
+      });
       return;
     }
 

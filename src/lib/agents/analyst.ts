@@ -450,7 +450,7 @@ INSTRUCTIONS FOR RETRY:
 
     const parsed = await parseJsonResponse<AnalystResponse>(response);
 
-    if (forceComplete && parsed.decision === 'SEARCH') {
+    if (forceComplete && (parsed.decision === 'SEARCH' || parsed.decision === 'FAIL')) {
       console.log('[Analyst] Force completing due to search limit');
 
       const forceResponse = summary
