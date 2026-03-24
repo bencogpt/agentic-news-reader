@@ -2,8 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
 import { runUFA } from '@/lib/agents/ufa';
-import { runAnalyst, processAnalystDecision } from '@/lib/agents/analyst';
-import { IntentSlots } from '@/lib/types';
 
 type NewsProvider = 'gnews' | 'newsapi' | 'newsdata' | 'guardian' | 'currents' | 'mediastack' | 'duckduckgo';
 
@@ -98,20 +96,27 @@ export async function POST(request: NextRequest) {
       updatedAt: FieldValue.serverTimestamp(),
     });
 
-    // If a task was created or updated, trigger the analyst asynchronously
+    // Store search settings on the task and trigger the pipeline
     if (ufaResult.taskId && (ufaResult.action.type === 'CREATE_TASK' || ufaResult.action.type === 'UPDATE_TASK')) {
-      const taskDoc = await db.collection('tasks').doc(ufaResult.taskId).get();
+      await db.collection('tasks').doc(ufaResult.taskId).update({
+        maxSearches: body.maxSearches || 1,
+        enabledProviders: body.enabledProviders || ALL_PROVIDERS,
+        resultsPerSearch: body.resultsPerSearch || 10,
+      });
 
-      if (taskDoc.exists) {
-        const taskStatus = taskDoc.data()!.status;
-        if (taskStatus === 'ACTIVE' || taskStatus === 'WAITING_ANALYST') {
-          const enabledProviders = body.enabledProviders || ALL_PROVIDERS;
-          const resultsPerSearch = body.resultsPerSearch || 10;
-          triggerAnalyst(ufaResult.taskId, body.maxSearches || 1, enabledProviders, 0, resultsPerSearch).catch((error) => {
-            console.error('Error triggering analyst:', error);
-          });
-        }
-      }
+      // Trigger the pipeline as a separate Cloud Run request (fire-and-forget).
+      // This runs analyst → summarizer → ... in its own request lifecycle with
+      // the full 3600s timeout, so it is never killed by the chat/send response.
+      const pipelineUrl = new URL('/api/agents/pipeline', request.url);
+      const cronSecret = process.env.CRON_SECRET;
+      fetch(pipelineUrl.toString(), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(cronSecret ? { Authorization: `Bearer ${cronSecret}` } : {}),
+        },
+        body: JSON.stringify({ taskId: ufaResult.taskId }),
+      }).catch((err) => console.error('[chat/send] Failed to trigger pipeline:', err));
     }
 
     return NextResponse.json({
@@ -131,111 +136,5 @@ export async function POST(request: NextRequest) {
       { error: 'Internal server error', details: error instanceof Error ? error.message : String(error) },
       { status: 500 }
     );
-  }
-}
-
-async function triggerAnalyst(
-  taskId: string,
-  maxSearches: number = 1,
-  enabledProviders: NewsProvider[] = ALL_PROVIDERS,
-  depth: number = 0,
-  resultsPerSearch: number = 10
-): Promise<void> {
-  const MAX_DEPTH = 10;
-  if (depth >= MAX_DEPTH) {
-    console.error(`[triggerAnalyst] Max recursion depth (${MAX_DEPTH}) reached for task ${taskId}`);
-    return;
-  }
-
-  try {
-    const taskDoc = await db.collection('tasks').doc(taskId).get();
-
-    if (!taskDoc.exists) return;
-
-    const task = { id: taskDoc.id, ...taskDoc.data() } as {
-      id: string;
-      status: string;
-      currentRequest?: string;
-      notes?: string;
-      summary?: string;
-      sources?: Array<{ title: string; url: string; source: string }>;
-      context?: IntentSlots;
-      iterationCount: number;
-      subQueries?: string[];
-    };
-
-    if (task.status === 'COMPLETED' || task.status === 'FAILED') {
-      console.log(`[triggerAnalyst] Task ${taskId} already ${task.status}, skipping`);
-      return;
-    }
-
-    // Fetch iteration history
-    const iterSnapshot = await db
-      .collection('tasks').doc(taskId)
-      .collection('searchIterations')
-      .orderBy('createdAt', 'asc')
-      .get();
-
-    const iterationHistory = iterSnapshot.docs.map((d) => {
-      const data = d.data();
-      return {
-        query: data.query as string,
-        provider: data.provider as string,
-        status: data.status as string,
-        resultsCount: data.resultsCount ?? null,
-        error: data.error ?? null,
-      };
-    });
-
-    const slots = (task.context as IntentSlots) || {};
-    const sources = (task.sources as Array<{ title: string; url: string; source: string }>) || [];
-
-    const decision = await runAnalyst({
-      taskId: task.id,
-      request: task.currentRequest || '',
-      slots,
-      notes: task.notes ?? null,
-      summary: task.summary ?? null,
-      sources,
-      iterationCount: task.iterationCount,
-      maxSearches,
-      iterationHistory,
-      enabledProviders,
-      subQueries: task.subQueries ?? [],
-    });
-
-    await processAnalystDecision(taskId, decision);
-
-    if (decision.type === 'SEARCH') {
-      // Find the latest pending iteration
-      const pendingSnapshot = await db
-        .collection('tasks').doc(taskId)
-        .collection('searchIterations')
-        .where('status', '==', 'PENDING')
-        .orderBy('createdAt', 'desc')
-        .limit(1)
-        .get();
-
-      if (!pendingSnapshot.empty) {
-        const pendingIterationId = pendingSnapshot.docs[0].id;
-        const { runSummarizer } = await import('@/lib/agents/summarizer');
-        await runSummarizer(taskId, pendingIterationId, resultsPerSearch);
-
-        const updatedTaskDoc = await db.collection('tasks').doc(taskId).get();
-        if (updatedTaskDoc.exists && updatedTaskDoc.data()!.status === 'WAITING_ANALYST') {
-          await triggerAnalyst(taskId, maxSearches, enabledProviders, depth + 1, resultsPerSearch);
-        }
-      }
-    }
-  } catch (error) {
-    console.error(`[triggerAnalyst] Error for task ${taskId}:`, error);
-    try {
-      await db.collection('tasks').doc(taskId).update({
-        status: 'FAILED',
-        response: `Research failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
-      });
-    } catch {
-      // Ignore update errors
-    }
   }
 }

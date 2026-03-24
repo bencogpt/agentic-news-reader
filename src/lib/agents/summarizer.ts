@@ -141,7 +141,9 @@ export async function runSummarizer(taskId: string, iterationId: string, results
       return;
     }
 
+    const MAX_ARTICLES = 5;
     const BATCH_SIZE = 5;
+    const articlesToProcess = articles.slice(0, MAX_ARTICLES);
     const allNotes: ArticleNotes[] = [];
     const successfulSources: Array<{ title: string; url: string; source: string }> = [];
 
@@ -206,8 +208,8 @@ export async function runSummarizer(taskId: string, iterationId: string, results
       }
     };
 
-    for (let i = 0; i < articles.length; i += BATCH_SIZE) {
-      const batch = articles.slice(i, i + BATCH_SIZE);
+    for (let i = 0; i < articlesToProcess.length; i += BATCH_SIZE) {
+      const batch = articlesToProcess.slice(i, i + BATCH_SIZE);
       const results = await Promise.allSettled(batch.map(processArticle));
 
       for (const result of results) {
@@ -218,7 +220,7 @@ export async function runSummarizer(taskId: string, iterationId: string, results
       }
     }
 
-    console.log(`[Summarizer] Processed ${successfulSources.length}/${articles.length} articles successfully`);
+    console.log(`[Summarizer] Processed ${successfulSources.length}/${articlesToProcess.length} articles successfully (capped at ${MAX_ARTICLES} of ${articles.length} found)`);
 
     await emitEvent(taskId, 'SUMMARIZER', 'ARTICLES_PROCESSED', {
       totalFound: articles.length,
