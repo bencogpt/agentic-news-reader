@@ -5,14 +5,7 @@ import { runAnalyst, processAnalystDecision } from '@/lib/agents/analyst';
 import { runSummarizer } from '@/lib/agents/summarizer';
 import { IntentSlots, NewsProvider } from '@/lib/types';
 
-const PIPELINE_SECRET = process.env.CRON_SECRET;
-
 export async function POST(request: NextRequest) {
-  const authHeader = request.headers.get('authorization');
-  if (PIPELINE_SECRET && authHeader !== `Bearer ${PIPELINE_SECRET}`) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
-  }
-
   let taskId: string;
   try {
     const body = await request.json();

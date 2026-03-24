@@ -96,27 +96,15 @@ export async function POST(request: NextRequest) {
       updatedAt: FieldValue.serverTimestamp(),
     });
 
-    // Store search settings on the task and trigger the pipeline
+    // Store search settings on the task so the pipeline can read them
     if (ufaResult.taskId && (ufaResult.action.type === 'CREATE_TASK' || ufaResult.action.type === 'UPDATE_TASK')) {
       await db.collection('tasks').doc(ufaResult.taskId).update({
         maxSearches: body.maxSearches || 1,
         enabledProviders: body.enabledProviders || ALL_PROVIDERS,
         resultsPerSearch: body.resultsPerSearch || 10,
       });
-
-      // Trigger the pipeline as a separate Cloud Run request (fire-and-forget).
-      // This runs analyst → summarizer → ... in its own request lifecycle with
-      // the full 3600s timeout, so it is never killed by the chat/send response.
-      const pipelineUrl = new URL('/api/agents/pipeline', request.url);
-      const cronSecret = process.env.CRON_SECRET;
-      fetch(pipelineUrl.toString(), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(cronSecret ? { Authorization: `Bearer ${cronSecret}` } : {}),
-        },
-        body: JSON.stringify({ taskId: ufaResult.taskId }),
-      }).catch((err) => console.error('[chat/send] Failed to trigger pipeline:', err));
+      // Pipeline is triggered client-side after this response is received.
+      // Browser fetch is never killed by Cloud Run — unlike server-side fire-and-forget.
     }
 
     return NextResponse.json({

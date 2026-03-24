@@ -192,6 +192,17 @@ export function Chat({ initialQuery }: { initialQuery?: string } = {}) {
       if (data.conversationId) {
         await refreshConversation(data.conversationId);
       }
+
+      // Trigger the research pipeline from the browser.
+      // Browser fetch survives until complete — unlike server-side fire-and-forget
+      // which can be killed when Cloud Run finishes the chat/send response.
+      if (data.taskId && (data.action === 'CREATE_TASK' || data.action === 'UPDATE_TASK')) {
+        fetch('/api/agents/pipeline', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ taskId: data.taskId }),
+        }).catch((err) => console.error('[Chat] Pipeline trigger failed:', err));
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
       setMessages((prev) => prev.filter((m) => m.id !== tempUserMessageId));
