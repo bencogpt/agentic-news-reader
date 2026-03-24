@@ -226,9 +226,29 @@ export async function runAnalyst(input: AnalystInput): Promise<AnalystDecision> 
 
   const maxIterations = maxSearches || MAX_ITERATIONS;
 
-  const activeProviders: NewsProvider[] = enabledProviders && enabledProviders.length > 0
-    ? enabledProviders.filter((p): p is NewsProvider => VALID_PROVIDERS.includes(p))
-    : [...VALID_PROVIDERS];
+  function isProviderConfigured(p: NewsProvider): boolean {
+    switch (p) {
+      case 'newsdata':  return !!process.env.NEWSDATA_API_KEY;
+      case 'gnews':     return !!process.env.GNEWS_API_KEY;
+      case 'guardian':  return !!process.env.GUARDIAN_API_KEY;
+      case 'currents':  return !!process.env.CURRENTS_API_KEY;
+      case 'mediastack': return !!process.env.MEDIASTACK_API_KEY;
+      case 'newsapi':   return !!process.env.NEWS_API_KEY;
+      case 'duckduckgo': return true; // no key needed
+      default:          return false;
+    }
+  }
+
+  const activeProviders: NewsProvider[] = (
+    enabledProviders && enabledProviders.length > 0
+      ? enabledProviders.filter((p): p is NewsProvider => VALID_PROVIDERS.includes(p))
+      : [...VALID_PROVIDERS]
+  ).filter(isProviderConfigured);
+
+  // Always keep duckduckgo as the unconditional last resort
+  if (!activeProviders.includes('duckduckgo')) {
+    activeProviders.push('duckduckgo');
+  }
 
   // On first iteration: decompose complex queries and store sub-queries on the task
   let subQueries = input.subQueries ?? [];

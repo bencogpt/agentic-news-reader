@@ -74,7 +74,7 @@ export function Chat({ initialQuery }: { initialQuery?: string } = {}) {
 
   // Get the active/display task (derived before effects that depend on it)
   const activeTask = tasks.find((t) => ['ACTIVE', 'RESEARCHING', 'WAITING_ANALYST'].includes(t.status));
-  const completedTask = tasks.find((t) => t.status === 'COMPLETED');
+  const completedTask = tasks.find((t) => ['COMPLETED', 'FAILED'].includes(t.status));
   const displayTask = activeTask || completedTask;
 
   // Subscribe to agentEvents subcollection via Firestore onSnapshot
@@ -102,7 +102,7 @@ export function Chat({ initialQuery }: { initialQuery?: string } = {}) {
             payload: (data.payload ?? {}) as Record<string, unknown>,
           };
           setEvents((prev) => prev.some((e) => e.id === event.id) ? prev : [...prev, event]);
-          if (['RESPONSE_FINALIZED', 'TASK_CREATED', 'TASK_UPDATED', 'ANALYST_DECISION', 'ERROR'].includes(event.type) && conversationId) {
+          if (['RESPONSE_FINALIZED', 'TASK_CREATED', 'TASK_UPDATED', 'ERROR'].includes(event.type) && conversationId) {
             refreshConversation(conversationId);
           }
         }
