@@ -13,14 +13,14 @@ const ALL_PROVIDERS: NewsProvider[] = ['newsdata', 'currents', 'gnews', 'guardia
 // Read settings from localStorage (same as ChatInput)
 function getStoredSettings() {
   if (typeof window === 'undefined') {
-    return { maxSearches: 1, debugMode: false, enabledProviders: ALL_PROVIDERS, resultsPerSearch: 10 };
+    return { maxSearches: 3, debugMode: false, enabledProviders: ALL_PROVIDERS, resultsPerSearch: 10 };
   }
   try {
     const saved = localStorage.getItem('newsReaderSettings');
     if (saved) {
       const parsed = JSON.parse(saved);
       return {
-        maxSearches: parsed.maxSearches || 1,
+        maxSearches: parsed.maxSearches || 3,
         debugMode: parsed.debugMode || false,
         enabledProviders: parsed.enabledProviders || ALL_PROVIDERS,
         resultsPerSearch: parsed.resultsPerSearch || 10,
@@ -29,7 +29,7 @@ function getStoredSettings() {
   } catch {
     // Ignore
   }
-  return { maxSearches: 1, debugMode: false, enabledProviders: ALL_PROVIDERS, resultsPerSearch: 10 };
+  return { maxSearches: 3, debugMode: false, enabledProviders: ALL_PROVIDERS, resultsPerSearch: 10 };
 }
 
 interface Message {
@@ -102,7 +102,7 @@ export function Chat({ initialQuery }: { initialQuery?: string } = {}) {
             payload: (data.payload ?? {}) as Record<string, unknown>,
           };
           setEvents((prev) => prev.some((e) => e.id === event.id) ? prev : [...prev, event]);
-          if (['RESPONSE_FINALIZED', 'TASK_CREATED', 'TASK_UPDATED'].includes(event.type) && conversationId) {
+          if (['RESPONSE_FINALIZED', 'TASK_CREATED', 'TASK_UPDATED', 'ANALYST_DECISION', 'ERROR'].includes(event.type) && conversationId) {
             refreshConversation(conversationId);
           }
         }

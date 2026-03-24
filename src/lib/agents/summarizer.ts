@@ -131,8 +131,9 @@ export async function runSummarizer(taskId: string, iterationId: string, results
     });
 
     if (articles.length === 0) {
+      // Mark as FAILED so the analyst retries with a different provider/query
       await iterationRef.update({
-        status: 'DONE',
+        status: 'FAILED',
         error: 'No articles found for query',
         updatedAt: FieldValue.serverTimestamp(),
       });

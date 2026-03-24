@@ -8,7 +8,7 @@ function getOpenAI(): OpenAI {
     if (!apiKey) {
       throw new Error('OPENAI_API_KEY is not configured');
     }
-    openaiClient = new OpenAI({ apiKey });
+    openaiClient = new OpenAI({ apiKey, timeout: 30000 });
   }
   return openaiClient;
 }
