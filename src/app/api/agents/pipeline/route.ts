@@ -61,6 +61,15 @@ async function runPipeline(taskId: string): Promise<void> {
       return;
     }
 
+    // User approved the plan — transition from PENDING_APPROVAL to ACTIVE
+    if (task.status === 'PENDING_APPROVAL') {
+      await db.collection('tasks').doc(taskId).update({
+        status: 'ACTIVE',
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      task.status = 'ACTIVE';
+    }
+
     // Fetch iteration history
     const iterSnapshot = await db
       .collection('tasks').doc(taskId)

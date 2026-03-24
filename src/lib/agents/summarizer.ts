@@ -142,9 +142,21 @@ export async function runSummarizer(taskId: string, iterationId: string, results
       return;
     }
 
+    // Skip articles already processed in previous iterations
+    const existingUrls = new Set<string>((task.sources ?? []).map((s) => s.url));
+    const newArticles = articles.filter((a) => !existingUrls.has(a.url));
+
+    if (newArticles.length === 0) {
+      // All articles already known — mark DONE without re-processing
+      console.log(`[Summarizer] All ${articles.length} articles already processed, skipping`);
+      await iterationRef.update({ status: 'DONE', updatedAt: FieldValue.serverTimestamp() });
+      await taskRef.update({ status: 'WAITING_ANALYST', updatedAt: FieldValue.serverTimestamp() });
+      return;
+    }
+
     const MAX_ARTICLES = 5;
     const BATCH_SIZE = 5;
-    const articlesToProcess = articles.slice(0, MAX_ARTICLES);
+    const articlesToProcess = newArticles.slice(0, MAX_ARTICLES);
     const allNotes: ArticleNotes[] = [];
     const successfulSources: Array<{ title: string; url: string; source: string }> = [];
 
@@ -236,7 +248,11 @@ export async function runSummarizer(taskId: string, iterationId: string, results
       : newNotesText;
 
     const existingSources = task.sources || [];
-    const combinedSources = [...existingSources, ...successfulSources];
+    const seenUrls = new Set<string>(existingSources.map((s) => s.url));
+    const combinedSources = [
+      ...existingSources,
+      ...successfulSources.filter((s) => !seenUrls.has(s.url)),
+    ];
 
     const summary = await generateSummary(
       task.currentRequest || '',

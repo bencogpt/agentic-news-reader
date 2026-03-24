@@ -139,24 +139,25 @@ interface DecomposedQuery {
   cleanTopic: string;
 }
 
-async function decomposeIfComplex(request: string, slots: IntentSlots): Promise<DecomposedQuery> {
+export async function decomposeIfComplex(request: string, slots: IntentSlots): Promise<DecomposedQuery> {
   const trivial: DecomposedQuery = { isComplex: false, subQueries: [], cleanTopic: slots.topic || request };
-
-  // Heuristics: question marks, conjunctions, analytical phrases, length
-  const complexSignals = [
-    /\?.*\?/.test(request),                                          // multiple questions
-    /\b(and|also|additionally|furthermore|moreover)\b/i.test(request),
-    /\b(analyze|analysis|implications|perspective|compare|versus|vs)\b/i.test(request),
-    request.split(' ').length > 15,
-  ];
-  if (complexSignals.filter(Boolean).length < 2) return trivial;
 
   try {
     const raw = await generateCompletion({
-      systemPrompt: `You are a search query strategist. Given a complex research question, break it into 2-4 focused, searchable sub-queries that together answer the full question.
-Strip analytical/opinion requests ("how would you analyze", "what do you think") — convert them into factual search angles.
-Return JSON only: {"isComplex": true, "cleanTopic": "short topic label", "subQueries": ["query 1", "query 2", ...]}
-Each sub-query should be a simple news search string (3-6 words, no special characters).`,
+      systemPrompt: `You are a search query strategist. Decide if a research question is complex enough to need multiple focused searches, or simple enough for a single search.
+
+A question is COMPLEX if it asks about multiple distinct topics, compares things, asks for multiple perspectives, or has several unrelated aspects.
+A question is SIMPLE if it asks about a single topic, person, or event — even if phrased as a question.
+
+Examples of SIMPLE (isComplex: false): "What happened with Trump?", "Latest news on Ukraine", "Tell me about Apple earnings"
+Examples of COMPLEX (isComplex: true): "Compare Biden and Trump on economy and foreign policy", "What are the causes and effects of the Israel-Hamas war?", "How did X affect both US and EU markets?"
+
+For COMPLEX queries, break into 2-4 focused, searchable sub-queries (3-6 words each, no special characters).
+Strip analytical/opinion requests — convert to factual search angles.
+
+Return JSON only:
+- Simple: {"isComplex": false, "cleanTopic": "short topic", "subQueries": []}
+- Complex: {"isComplex": true, "cleanTopic": "short topic", "subQueries": ["query 1", "query 2", ...]}`,
       userPrompt: `Request: "${request}"\nTopic slot: "${slots.topic || 'not set'}"`,
       jsonMode: true,
       temperature: 0.2,
@@ -275,6 +276,9 @@ export async function runAnalyst(input: AnalystInput): Promise<AnalystDecision> 
   );
   const allRateLimited = availableRegular.length === 0 && rateLimitedProviders.length > 0;
 
+  // Compute forceComplete BEFORE any early-return paths so they all respect the limit
+  const forceComplete = iterationCount >= maxIterations;
+
   // Check for failed iterations
   const failedSnapshot = await db
     .collection('tasks').doc(taskId)
@@ -293,7 +297,8 @@ export async function runAnalyst(input: AnalystInput): Promise<AnalystDecision> 
     createdAt: FirebaseFirestore.Timestamp;
   }));
 
-  if (failedIterations.length > 0) {
+  // Only enter failure-retry path if we haven't hit the search limit
+  if (failedIterations.length > 0 && !forceComplete) {
     const failedIteration = failedIterations[0];
     const errorMsg = failedIteration.error || '';
     const failedProvider = (failedIteration.provider as NewsProvider) || 'gnews';
@@ -412,8 +417,8 @@ INSTRUCTIONS FOR RETRY:
     sourceCount: sources.length,
   });
 
-  // If all regular APIs are rate-limited, force-use duckduckgo immediately
-  if (allRateLimited) {
+  // If all regular APIs are rate-limited, force-use duckduckgo immediately (unless at limit)
+  if (allRateLimited && !forceComplete) {
     const ddgQuery = subQueries[iterationCount] ?? buildFallbackQuery(request, slots);
     console.log(`[Analyst] All APIs rate-limited — falling back to DuckDuckGo: "${ddgQuery}"`);
     await emitEvent(taskId, 'ANALYST', 'ANALYST_DECISION', {
@@ -425,8 +430,6 @@ INSTRUCTIONS FOR RETRY:
     await emitEvent(taskId, 'ANALYST', 'SEARCH_QUERY_CREATED', { query: ddgQuery, provider: 'duckduckgo' });
     return { type: 'SEARCH', query: ddgQuery, provider: 'duckduckgo', reason: 'All APIs rate-limited — DuckDuckGo fallback' };
   }
-
-  const forceComplete = iterationCount >= maxIterations;
 
   if (forceComplete) {
     await emitEvent(taskId, 'ANALYST', 'SEARCH_LIMIT_REACHED', {

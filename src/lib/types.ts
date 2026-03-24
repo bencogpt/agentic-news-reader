@@ -4,6 +4,7 @@ export type TaskStatus =
   | 'ACTIVE'
   | 'RESEARCHING'
   | 'WAITING_ANALYST'
+  | 'PENDING_APPROVAL'
   | 'COMPLETED'
   | 'FAILED'
   | 'CANCELLED';

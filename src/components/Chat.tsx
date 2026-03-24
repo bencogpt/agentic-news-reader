@@ -70,10 +70,14 @@ export function Chat({ initialQuery }: { initialQuery?: string } = {}) {
   const [isResearchOpen, setIsResearchOpen] = useState(true);
   const [debugMode, setDebugModeState] = useState(false);
   const [showSettings, setShowSettings] = useState(true);
+  const [approvalPlan, setApprovalPlan] = useState<{ subQueries: string[]; taskId: string } | null>(null);
+  const [inputFocusTrigger, setInputFocusTrigger] = useState(0);
   const unsubscribeRef = useRef<Unsubscribe | null>(null);
+  // Tracks the task awaiting refinement — read in sendMessage without stale closure
+  const pendingRefineTaskIdRef = useRef<string | null>(null);
 
   // Get the active/display task (derived before effects that depend on it)
-  const activeTask = tasks.find((t) => ['ACTIVE', 'RESEARCHING', 'WAITING_ANALYST'].includes(t.status));
+  const activeTask = tasks.find((t) => ['ACTIVE', 'RESEARCHING', 'WAITING_ANALYST', 'PENDING_APPROVAL'].includes(t.status));
   const completedTask = tasks.find((t) => ['COMPLETED', 'FAILED'].includes(t.status));
   const displayTask = activeTask || completedTask;
 
@@ -155,6 +159,9 @@ export function Chat({ initialQuery }: { initialQuery?: string } = {}) {
     ]);
 
     try {
+      const refineTaskId = pendingRefineTaskIdRef.current;
+      pendingRefineTaskIdRef.current = null;
+
       const response = await fetch('/api/chat/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -164,6 +171,7 @@ export function Chat({ initialQuery }: { initialQuery?: string } = {}) {
           maxSearches: finalMaxSearches,
           enabledProviders: finalEnabledProviders,
           resultsPerSearch: finalResultsPerSearch,
+          pendingApprovalTaskId: refineTaskId ?? undefined,
         }),
       });
 
@@ -193,10 +201,15 @@ export function Chat({ initialQuery }: { initialQuery?: string } = {}) {
         await refreshConversation(data.conversationId);
       }
 
-      // Trigger the research pipeline from the browser.
-      // Browser fetch survives until complete — unlike server-side fire-and-forget
-      // which can be killed when Cloud Run finishes the chat/send response.
-      if (data.taskId && (data.action === 'CREATE_TASK' || data.action === 'UPDATE_TASK')) {
+      if (data.approvalPlan) {
+        // Complex query — wait for user to approve the research plan before starting pipeline
+        setApprovalPlan(data.approvalPlan);
+      } else if (data.taskId && (
+        data.action === 'CREATE_TASK' ||
+        data.action === 'UPDATE_TASK' ||
+        refineTaskId  // refinement: server returned effectiveTaskId even on RESPOND
+      )) {
+        // Trigger the research pipeline from the browser.
         fetch('/api/agents/pipeline', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -226,7 +239,29 @@ export function Chat({ initialQuery }: { initialQuery?: string } = {}) {
     setMessages([]);
     setTasks([]);
     setEvents([]);
+    setApprovalPlan(null);
   }, []);
+
+  const handleApprove = useCallback(() => {
+    if (!approvalPlan) return;
+    const { taskId } = approvalPlan;
+    setApprovalPlan(null);
+    fetch('/api/agents/pipeline', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId }),
+    }).catch((err) => console.error('[Chat] Pipeline trigger failed:', err));
+    // Refresh after a short delay so tasks state picks up the ACTIVE status
+    setTimeout(() => {
+      if (conversationId) refreshConversation(conversationId);
+    }, 1500);
+  }, [approvalPlan, conversationId]);
+
+  const handleRefine = useCallback(() => {
+    if (approvalPlan) pendingRefineTaskIdRef.current = approvalPlan.taskId;
+    setApprovalPlan(null);
+    setInputFocusTrigger((t) => t + 1);
+  }, [approvalPlan]);
 
   // Filter events for the display task
   const taskEvents = displayTask
@@ -303,6 +338,39 @@ export function Chat({ initialQuery }: { initialQuery?: string } = {}) {
             />
           </div>
 
+          {/* Research plan approval card */}
+          {approvalPlan && (
+            <div className="mx-4 mb-4 p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg">
+              <p className="text-sm font-semibold text-blue-800 dark:text-blue-200 mb-2">
+                Research Plan
+              </p>
+              <p className="text-xs text-blue-700 dark:text-blue-300 mb-3">
+                Your query will be researched using {approvalPlan.subQueries.length} focused searches:
+              </p>
+              <ol className="list-decimal list-inside space-y-1 mb-4">
+                {approvalPlan.subQueries.map((q, i) => (
+                  <li key={i} className="text-sm text-gray-800 dark:text-gray-200">
+                    {q}
+                  </li>
+                ))}
+              </ol>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleApprove}
+                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
+                >
+                  Start Research
+                </button>
+                <button
+                  onClick={handleRefine}
+                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
+                >
+                  Refine Query
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Error display */}
           {error && (
             <div className="mx-4 mb-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
@@ -320,6 +388,7 @@ export function Chat({ initialQuery }: { initialQuery?: string } = {}) {
             }
             showSettings={showSettings}
             onShowSettingsChange={setShowSettings}
+            focusTrigger={inputFocusTrigger}
           />
         </div>
 

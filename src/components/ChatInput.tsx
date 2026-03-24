@@ -18,13 +18,14 @@ interface ChatInputProps {
   placeholder?: string;
   showSettings: boolean;
   onShowSettingsChange: (show: boolean) => void;
+  focusTrigger?: number;
 }
 
 // Load settings from localStorage
 function loadSettings() {
   if (typeof window === 'undefined') {
     return {
-      maxSearches: 1,
+      maxSearches: 3,
       debugMode: false,
       enabledProviders: ALL_PROVIDERS.map(p => p.id),
       resultsPerSearch: 10
@@ -38,22 +39,26 @@ function loadSettings() {
       if (parsed.provider && !parsed.enabledProviders) {
         parsed.enabledProviders = ALL_PROVIDERS.map(p => p.id);
       }
+      // Migrate old default of 1 → 3
+      if (!parsed.maxSearches || parsed.maxSearches === 1) {
+        parsed.maxSearches = 3;
+      }
       return parsed;
     }
   } catch {
     // Ignore parse errors
   }
   return {
-    maxSearches: 1,
+    maxSearches: 3,
     debugMode: false,
     enabledProviders: ALL_PROVIDERS.map(p => p.id),
     resultsPerSearch: 10
   };
 }
 
-export function ChatInput({ onSend, isLoading, placeholder, showSettings, onShowSettingsChange }: ChatInputProps) {
+export function ChatInput({ onSend, isLoading, placeholder, showSettings, onShowSettingsChange, focusTrigger }: ChatInputProps) {
   const [message, setMessage] = useState('');
-  const [maxSearches, setMaxSearches] = useState(1);
+  const [maxSearches, setMaxSearches] = useState(3);
   const [debugMode, setDebugMode] = useState(false);
   const [enabledProviders, setEnabledProviders] = useState<NewsProvider[]>(ALL_PROVIDERS.map(p => p.id));
   const [resultsPerSearch, setResultsPerSearch] = useState(10);
@@ -93,6 +98,13 @@ export function ChatInput({ onSend, isLoading, placeholder, showSettings, onShow
       textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
     }
   }, [message]);
+
+  // Focus textarea when triggered externally (e.g. after "Refine Query")
+  useEffect(() => {
+    if (focusTrigger) {
+      textareaRef.current?.focus();
+    }
+  }, [focusTrigger]);
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
